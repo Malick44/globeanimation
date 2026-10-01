@@ -7,13 +7,14 @@ import { showToast } from './toast.js';
 import { captureSnapshot } from '../recorder/videoExporter.js';
 
 export class StudioHeader {
-  constructor(containerElement, store, globeEngine, onOpenExport, onOpenJson, onOpenJsx) {
+  constructor(containerElement, store, globeEngine, onOpenExport, onOpenJson, onOpenJsx, onOpenAgent) {
     this.container = containerElement;
     this.store = store;
     this.globeEngine = globeEngine;
     this.onOpenExport = onOpenExport;
     this.onOpenJson = onOpenJson;
     this.onOpenJsx = onOpenJsx;
+    this.onOpenAgent = onOpenAgent;
 
     this.element = document.createElement('header');
     this.element.className = 'studio-header';
@@ -114,6 +115,14 @@ export class StudioHeader {
           <span>Scene JSON</span>
         </button>
 
+        <!-- AI Video Director Agent Button -->
+        <button id="btn-ai-agent" class="agent-btn glow" title="AI Video Agent: Auto-Create Cinematic Videos from Prompts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+          </svg>
+          <span>AI Director</span>
+        </button>
+
         <!-- Render & Export Primary Button -->
         <button id="btn-render-video" class="primary-btn glow" title="Render MP4/WebM Video Clip">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -189,6 +198,11 @@ export class StudioHeader {
     // Scene JSON button
     this.element.querySelector('#btn-scene-json')?.addEventListener('click', () => {
       if (this.onOpenJson) this.onOpenJson();
+    });
+
+    // AI Director Agent button
+    this.element.querySelector('#btn-ai-agent')?.addEventListener('click', () => {
+      if (this.onOpenAgent) this.onOpenAgent();
     });
 
     // Render video button

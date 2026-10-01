@@ -13,6 +13,8 @@ import { ExportModal } from './ui/exportModal.js';
 import { PRESETS } from './presets.js';
 import { showToast } from './ui/toast.js';
 import { exportVideo, captureSnapshot } from './recorder/videoExporter.js';
+import { VideoAgentEngine } from './agent/videoAgentEngine.js';
+import { AIAgentModal } from './agent/aiAgentModal.js';
 
 window.addEventListener('DOMContentLoaded', () => {
   const cesiumContainer = document.getElementById('cesium-container');
@@ -53,8 +55,10 @@ window.addEventListener('DOMContentLoaded', () => {
     new FramingGuides(cesiumContainer, store);
     new GroundPhotoOverlay(cesiumContainer, store);
 
-    // Initialize Export Modal
+    // Initialize Export Modal & Autonomous Video Agent
     const exportModal = new ExportModal(store, engine);
+    const videoAgent = new VideoAgentEngine(store, engine);
+    const agentModal = new AIAgentModal(store, engine, videoAgent);
 
     let timelineInstance = null;
 
@@ -86,7 +90,8 @@ window.addEventListener('DOMContentLoaded', () => {
         engine,
         () => exportModal.show('render'),
         () => exportModal.show('json'),
-        () => exportModal.show('ae-jsx')
+        () => exportModal.show('ae-jsx'),
+        () => agentModal.show()
       );
 
       new StudioSidebar(sidebarMount, store, engine);
@@ -94,7 +99,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Welcome Toast
       setTimeout(() => {
-        showToast('Welcome to GlobeLocation Studio! Choose a template or inspiration.', 'info', 4000);
+        showToast('Welcome to GlobeLocation Studio! Choose a template, or click AI Director ✨ to auto-create videos.', 'info', 4500);
       }, 600);
     }
 
@@ -103,6 +108,9 @@ window.addEventListener('DOMContentLoaded', () => {
       store,
       globeEngine: engine,
       timeline: timelineInstance,
+      agent: videoAgent,
+      agentModal,
+      openAgent: () => agentModal.show(),
       exportVideo: (options, onProgress) => exportVideo(engine, store.scene, options, onProgress),
       captureSnapshot: (filename) => captureSnapshot(engine, store.scene, filename),
       seek: (progress) => engine.seek(store.scene, progress),
