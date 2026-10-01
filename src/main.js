@@ -5,6 +5,7 @@
 import { store } from './state.js';
 import { GlobeEngine } from './cesium/viewer.js';
 import { FramingGuides } from './ui/framingGuides.js';
+import { GroundPhotoOverlay } from './ui/groundPhotoOverlay.js';
 import { StudioHeader } from './ui/header.js';
 import { StudioSidebar } from './ui/sidebar.js';
 import { StudioTimeline } from './ui/timeline.js';
@@ -48,8 +49,9 @@ window.addEventListener('DOMContentLoaded', () => {
     engine.syncScene(store.scene);
     engine.seek(store.scene, 0);
 
-    // Initialize Framing Guides
+    // Initialize Framing Guides & Ground Photo Overlay
     new FramingGuides(cesiumContainer, store);
+    new GroundPhotoOverlay(cesiumContainer, store);
 
     // Initialize Export Modal
     const exportModal = new ExportModal(store, engine);

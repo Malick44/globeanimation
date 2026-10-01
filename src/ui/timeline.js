@@ -298,6 +298,20 @@ export class StudioTimeline {
     }
   }
 
+  seekTo(timeInSeconds) {
+    const duration = this.store.scene.format?.durationSeconds || 8;
+    const clampedTime = Math.max(0, Math.min(duration, timeInSeconds));
+    const progress = duration > 0 ? clampedTime / duration : 0;
+
+    this.store.setPlayback({
+      currentTime: clampedTime,
+      progress,
+    });
+
+    this.updateUI(progress, clampedTime);
+    this.globeEngine.seek(this.store.scene, progress);
+  }
+
   updateUI(progress, currentTime) {
     const pct = (progress * 100).toFixed(2);
     const progressBar = this.element.querySelector('#scrubber-progress');

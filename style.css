@@ -1457,3 +1457,158 @@ html, body {
     transform: translateY(0);
   }
 }
+
+/* ==========================================================================
+   Real Location Ground Photo Overlay & Sidebar Controls
+   ========================================================================== */
+
+.ground-photo-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.08s linear;
+  overflow: hidden;
+}
+
+.ground-photo-media {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  transform-origin: center center;
+  transition: transform 0.08s linear;
+}
+
+.ground-photo-badge {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(9, 13, 22, 0.88);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 999px;
+  color: #f8fafc;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  z-index: 16;
+}
+
+.ground-photo-badge svg {
+  color: var(--accent-amber);
+}
+
+.ground-photo-overlay.pip-mode {
+  inset: auto 32px 32px auto;
+  width: 440px;
+  height: 250px;
+  border-radius: 16px;
+  border: 2px solid var(--accent-amber);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85);
+}
+
+.ground-photo-overlay.pip-mode .ground-photo-badge {
+  bottom: 12px;
+  right: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+/* Sidebar Ground Photo Card & Uploader */
+.ground-photo-card {
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.photo-preview-wrap {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #000;
+}
+
+.photo-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-preview-actions {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.photo-btn-icon {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s ease;
+}
+
+.photo-btn-icon:hover {
+  background: rgba(239, 68, 68, 0.85);
+  border-color: #ef4444;
+}
+
+.photo-upload-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  gap: 6px;
+}
+
+.photo-upload-dropzone:hover {
+  border-color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.photo-upload-dropzone svg {
+  color: var(--accent-amber);
+  margin-bottom: 4px;
+}
+
+.photo-upload-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.photo-upload-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+

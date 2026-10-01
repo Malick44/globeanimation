@@ -1,6 +1,7 @@
 /**
  * High-Resolution Video & Snapshot Renderer for GlobeLocation
- * Composites 3D Cesium WebGL canvas with animated typography, titles, and attribution
+ * Composites 3D Cesium WebGL canvas with real location landing photography,
+ * animated typography, titles, and attribution
  */
 import { ambience } from '../audio/ambience.js';
 
@@ -18,6 +19,119 @@ export function getSupportedMimeType() {
     }
   }
   return 'video/webm';
+}
+
+/**
+ * Render Ground Photo Transition on 2D Composite Canvas
+ */
+export function drawGroundPhotoOnCanvas(ctx, img, groundPhotoConfig, p, width, height) {
+  if (!img || !img.complete || img.naturalWidth === 0) return;
+
+  const transition = groundPhotoConfig.transition || 'dissolve';
+
+  ctx.save();
+
+  if (transition === 'pip-card') {
+    // Picture in picture card in bottom right or center
+    const cardW = Math.min(width * 0.44, 680);
+    const cardH = (cardW / img.naturalWidth) * img.naturalHeight;
+    const pad = 36;
+    const cardX = width - cardW - pad;
+    const cardY = height - cardH - pad;
+
+    ctx.globalAlpha = Math.min(1, p * 1.4);
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = 24;
+
+    // Card frame
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, 14);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, 14);
+    ctx.clip();
+    ctx.drawImage(img, cardX, cardY, cardW, cardH);
+    ctx.restore();
+
+    // Caption
+    if (groundPhotoConfig.caption) {
+      ctx.fillStyle = 'rgba(7, 11, 20, 0.88)';
+      ctx.beginPath();
+      ctx.roundRect(cardX + 14, cardY + cardH - 42, cardW - 28, 30, 8);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '600 13px "Inter", sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(groundPhotoConfig.caption, cardX + 26, cardY + cardH - 27);
+    }
+  } else {
+    // Fullscreen dissolve or zoom-cut
+    ctx.globalAlpha = Math.max(0, Math.min(1, p));
+
+    // Cover math (preserve image aspect ratio without stretching)
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    const screenRatio = width / height;
+    let drawW, drawH, drawX, drawY;
+
+    if (screenRatio > imgRatio) {
+      drawW = width;
+      drawH = width / imgRatio;
+      drawX = 0;
+      drawY = (height - drawH) / 2;
+    } else {
+      drawH = height;
+      drawW = height * imgRatio;
+      drawY = 0;
+      drawX = (width - drawW) / 2;
+    }
+
+    if (transition === 'zoom-cut') {
+      const scale = 1.14 - 0.14 * p;
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-width / 2, -height / 2);
+    }
+
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+    // Caption Badge
+    if (groundPhotoConfig.caption && p > 0.25) {
+      const badgeAlpha = Math.min(1, (p - 0.25) / 0.75);
+      ctx.globalAlpha = badgeAlpha;
+
+      const badgeText = groundPhotoConfig.caption;
+      ctx.font = '600 15px "Inter", sans-serif';
+      const textMetrics = ctx.measureText(badgeText);
+      const bW = textMetrics.width + 44;
+      const bH = 40;
+      const bX = width - bW - 36;
+      const bY = height - bH - 36;
+
+      ctx.fillStyle = 'rgba(7, 11, 20, 0.90)';
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.roundRect(bX, bY, bW, bH, 999);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(bX + 18, bY + bH / 2, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badgeText, bX + 32, bY + bH / 2);
+    }
+  }
+
+  ctx.restore();
 }
 
 /**
@@ -109,14 +223,14 @@ export function drawOverlaysOnCanvas(ctx, scene, currentTime, width, height) {
             ctx.font = `400 ${Math.round(14 * baseScale)}px "Inter", sans-serif`;
             ctx.fillText(subtext, width / 2, cardY + 52 * baseScale);
           }
-        } else {
-          // Center cinematic
-          const cardY = height * 0.45;
+          ctx.textAlign = 'left';
+        } else if (position === 'center') {
+          ctx.textAlign = 'center';
           ctx.fillStyle = '#ffffff';
           ctx.font = `800 ${Math.round(44 * baseScale)}px "Outfit", sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.shadowColor = 'rgba(0,0,0,0.8)';
-          ctx.shadowBlur = 18;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+          ctx.shadowBlur = 24;
+          const cardY = height * 0.45;
           ctx.fillText(titleText, width / 2, cardY);
 
           if (subtext) {
@@ -204,6 +318,27 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
   const durationSeconds = scene.format.durationSeconds || 8;
   const totalFrames = Math.round(durationSeconds * fps);
 
+  // Preload real ground photo if enabled
+  let groundImg = null;
+  if (scene.groundPhoto?.enabled && scene.groundPhoto?.url) {
+    try {
+      groundImg = new Image();
+      groundImg.crossOrigin = 'anonymous';
+      groundImg.src = scene.groundPhoto.url;
+      await new Promise((resolve) => {
+        groundImg.onload = resolve;
+        groundImg.onerror = () => {
+          console.warn('Ground photo image failed to load during export');
+          groundImg = null;
+          resolve();
+        };
+        setTimeout(resolve, 3000);
+      });
+    } catch (e) {
+      console.warn('Could not load ground photo for export:', e);
+    }
+  }
+
   // Offscreen compositing canvas
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -285,11 +420,6 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
         const targetAspect = width / height;
         const srcAspect = srcW / srcH;
 
-        let drawW = width;
-        let drawH = height;
-        let drawX = 0;
-        let drawY = 0;
-
         if (srcAspect > targetAspect) {
           // Source is wider, crop sides
           const cropW = srcH * targetAspect;
@@ -300,6 +430,16 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
           const cropH = srcW / targetAspect;
           const cropY = (srcH - cropH) / 2;
           ctx.drawImage(sourceCanvas, 0, cropY, srcW, cropH, 0, 0, width, height);
+        }
+      }
+
+      // Draw Real Location Ground Photo Transition if within transition window
+      if (groundImg && scene.groundPhoto?.enabled) {
+        const photoDuration = scene.groundPhoto.durationSeconds || 1.8;
+        const transStart = Math.max(0, durationSeconds - photoDuration);
+        if (currentTime >= transStart) {
+          const p = Math.min(1, Math.max(0, (currentTime - transStart) / photoDuration));
+          drawGroundPhotoOnCanvas(ctx, groundImg, scene.groundPhoto, p, width, height);
         }
       }
 
@@ -318,20 +458,19 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
     mediaRecorder.stop();
     const result = await recordingPromise;
 
-    // Trigger download
+    // Trigger automatic download
     const safeName = (scene.name || 'location-video').toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
     const a = document.createElement('a');
     a.href = result.url;
-    a.download = `${safeName}-${scene.format.aspectRatio.replace(':', 'x')}.${ext}`;
+    a.download = `${safeName}-${Date.now()}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
     return result;
   } catch (err) {
-    if (audioTrack) ambience.stop();
-    if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    mediaRecorder.stop();
     throw err;
   }
 }

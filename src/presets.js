@@ -45,6 +45,14 @@ export const PRESETS = [
     timeline: [
       { id: 't1', at: 4.6, action: 'showTitle', text: 'NEW YORK CITY', subtext: '40.7128° N, 74.0060° W • Lower Manhattan', position: 'lower-third' },
     ],
+    groundPhoto: {
+      enabled: true,
+      url: '/photos/nyc_ground.jpg',
+      fileName: 'nyc_ground.jpg',
+      transition: 'dissolve',
+      durationSeconds: 1.8,
+      caption: 'Ground Photography • Lower Manhattan',
+    },
   },
   {
     id: 'dubai-burj-zoom',
@@ -87,6 +95,14 @@ export const PRESETS = [
     timeline: [
       { id: 't1', at: 4.5, action: 'showTitle', text: 'BURJ KHALIFA & DUBAI', subtext: '25.1972° N, 55.2744° E • Spire Elevation 828m', position: 'lower-third' },
     ],
+    groundPhoto: {
+      enabled: true,
+      url: '/photos/dubai_ground.jpg',
+      fileName: 'dubai_ground.jpg',
+      transition: 'dissolve',
+      durationSeconds: 1.8,
+      caption: 'Burj Khalifa Promenade • Downtown Dubai',
+    },
   },
   {
     id: 'everest-expedition',

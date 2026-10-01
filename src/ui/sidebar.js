@@ -129,6 +129,14 @@ export class StudioSidebar {
     const loc = scene.location || {};
     const mainPin = scene.overlays?.find((o) => o.type === 'pin') || {};
     const waypoints = scene.camera?.waypoints || [];
+    const groundPhoto = scene.groundPhoto || {
+      enabled: false,
+      url: '',
+      fileName: '',
+      transition: 'dissolve',
+      durationSeconds: 1.8,
+      caption: '',
+    };
 
     return `
       <div class="panel-section">
@@ -198,6 +206,87 @@ export class StudioSidebar {
             `
               )
               .join('')}
+          </div>
+        </div>
+
+        <!-- Landing Frame (Real Location Photo) -->
+        <div class="section-divider"></div>
+        <div class="section-header">
+          <div class="flex-between">
+            <h4 class="sub-title">Landing Frame (Real Location Image)</h4>
+            <input type="checkbox" id="check-ground-photo-enabled" ${groundPhoto.enabled ? 'checked' : ''} class="studio-switch" title="Toggle Landing Frame" />
+          </div>
+          <span class="section-hint">Transition from 3D dive into authentic real location photography</span>
+        </div>
+
+        <div class="ground-photo-card">
+          ${
+            groundPhoto.url
+              ? `
+            <div class="photo-preview-wrap">
+              <img src="${groundPhoto.url}" alt="Location Arrival" class="photo-preview-img" />
+              <div class="photo-preview-actions">
+                <label class="photo-btn-icon" title="Change photo">
+                  Change
+                  <input type="file" id="file-ground-photo" accept="image/*" style="display: none;" />
+                </label>
+                <button id="btn-remove-photo" class="photo-btn-icon" title="Remove photo">Remove</button>
+              </div>
+            </div>
+          `
+              : `
+            <label class="photo-upload-dropzone" for="file-ground-photo">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              <span class="photo-upload-title">Upload Ground / Arrival Photo</span>
+              <span class="photo-upload-hint">Drop PNG, JPG or WebP here</span>
+              <input type="file" id="file-ground-photo" accept="image/*" style="display: none;" />
+            </label>
+          `
+          }
+
+          <div class="flex-between">
+            <button id="btn-sample-nyc" class="secondary-btn btn-xs" title="Use Curated NYC Street Photography">NYC Photo</button>
+            <button id="btn-sample-dubai" class="secondary-btn btn-xs" title="Use Curated Dubai Marina Photography">Dubai Photo</button>
+          </div>
+
+          <div class="field-group mt-1">
+            <label class="field-label">Transition Style</label>
+            <select id="select-photo-transition" class="studio-select">
+              <option value="dissolve" ${groundPhoto.transition === 'dissolve' ? 'selected' : ''}>Dissolve (Smooth Fade)</option>
+              <option value="zoom-cut" ${groundPhoto.transition === 'zoom-cut' ? 'selected' : ''}>Zoom Match-Cut (Dramatic Dive)</option>
+              <option value="pip-card" ${groundPhoto.transition === 'pip-card' ? 'selected' : ''}>PiP Inset Card (Corner Badge)</option>
+            </select>
+          </div>
+
+          <div class="slider-group mt-1">
+            <div class="slider-header">
+              <label class="field-label">Transition Duration</label>
+              <span class="slider-value font-mono" id="photo-duration-val">${(groundPhoto.durationSeconds || 1.8).toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              id="slider-photo-duration"
+              min="0.5"
+              max="3.5"
+              step="0.1"
+              value="${groundPhoto.durationSeconds || 1.8}"
+              class="studio-slider"
+            />
+          </div>
+
+          <div class="field-group mt-1">
+            <label class="field-label">Photo Caption Badge</label>
+            <input
+              type="text"
+              id="input-photo-caption"
+              class="studio-input"
+              value="${groundPhoto.caption || ''}"
+              placeholder="e.g. Ground Photography • Lower Manhattan"
+            />
           </div>
         </div>
 
@@ -531,6 +620,85 @@ export class StudioSidebar {
           this.render();
         }
       });
+    });
+
+    // Landing Frame (Ground Photo) controls
+    const photoEnabledCheck = this.element.querySelector('#check-ground-photo-enabled');
+    photoEnabledCheck?.addEventListener('change', (e) => {
+      this.store.updateGroundPhoto({ enabled: e.target.checked });
+      showToast(e.target.checked ? 'Landing frame photo enabled' : 'Landing frame photo disabled', 'info');
+    });
+
+    const photoFileInput = this.element.querySelector('#file-ground-photo');
+    photoFileInput?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const dataUrl = uploadEvent.target?.result;
+        if (dataUrl) {
+          this.store.updateGroundPhoto({
+            enabled: true,
+            url: dataUrl,
+            fileName: file.name,
+            caption: this.store.scene.groundPhoto?.caption || `Ground Photography • ${this.store.scene.location.name}`,
+          });
+          showToast(`Uploaded real location photo: ${file.name}`, 'success');
+          this.render();
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    this.element.querySelector('#btn-remove-photo')?.addEventListener('click', () => {
+      this.store.updateGroundPhoto({
+        enabled: false,
+        url: '',
+        fileName: '',
+      });
+      showToast('Landing frame photo removed', 'info');
+      this.render();
+    });
+
+    this.element.querySelector('#btn-sample-nyc')?.addEventListener('click', () => {
+      this.store.updateGroundPhoto({
+        enabled: true,
+        url: '/photos/nyc_ground.jpg',
+        fileName: 'nyc_ground.jpg',
+        caption: 'Ground Photography • Lower Manhattan',
+      });
+      showToast('Loaded NYC ground photography', 'success');
+      this.render();
+    });
+
+    this.element.querySelector('#btn-sample-dubai')?.addEventListener('click', () => {
+      this.store.updateGroundPhoto({
+        enabled: true,
+        url: '/photos/dubai_ground.jpg',
+        fileName: 'dubai_ground.jpg',
+        caption: 'Ground Photography • Dubai Downtown',
+      });
+      showToast('Loaded Dubai ground photography', 'success');
+      this.render();
+    });
+
+    this.element.querySelector('#select-photo-transition')?.addEventListener('change', (e) => {
+      this.store.updateGroundPhoto({ transition: e.target.value });
+      showToast(`Transition set to ${e.target.value}`, 'info');
+    });
+
+    const photoDurationSlider = this.element.querySelector('#slider-photo-duration');
+    photoDurationSlider?.addEventListener('input', (e) => {
+      const duration = parseFloat(e.target.value);
+      this.store.updateGroundPhoto({ durationSeconds: duration });
+      const lbl = this.element.querySelector('#photo-duration-val');
+      if (lbl) lbl.textContent = `${duration.toFixed(1)}s`;
+    });
+
+    const photoCaptionInput = this.element.querySelector('#input-photo-caption');
+    photoCaptionInput?.addEventListener('input', (e) => {
+      this.store.updateGroundPhoto({ caption: e.target.value });
     });
 
     // Easing Selector

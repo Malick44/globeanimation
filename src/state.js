@@ -115,6 +115,14 @@ export const DEFAULT_SCENE = {
       position: 'lower-third',
     },
   ],
+  groundPhoto: {
+    enabled: true,
+    url: '/photos/nyc_ground.jpg',
+    fileName: 'nyc_ground.jpg',
+    transition: 'dissolve',
+    durationSeconds: 1.8,
+    caption: 'Ground Photography • Lower Manhattan',
+  },
   audio: {
     enabled: true,
     type: 'cinematic-drone',
@@ -208,6 +216,21 @@ class Store {
     this.notify('location');
   }
 
+  updateGroundPhoto(partial) {
+    this.scene.groundPhoto = {
+      ...(this.scene.groundPhoto || {
+        enabled: false,
+        url: null,
+        fileName: '',
+        transition: 'dissolve',
+        durationSeconds: 1.8,
+        caption: '',
+      }),
+      ...partial,
+    };
+    this.notify('ground-photo');
+  }
+
   setPlayback(partial) {
     this.playback = { ...this.playback, ...partial };
     this.notify('playback');
@@ -229,6 +252,7 @@ class Store {
         camera: { ...DEFAULT_SCENE.camera, ...(parsed.camera || {}) },
         overlays: parsed.overlays || DEFAULT_SCENE.overlays,
         timeline: parsed.timeline || DEFAULT_SCENE.timeline,
+        groundPhoto: parsed.groundPhoto || DEFAULT_SCENE.groundPhoto,
       };
       this.playback.currentTime = 0;
       this.playback.progress = 0;
