@@ -1,6 +1,6 @@
 /**
  * Camera Motion & Pose Interpolation Engine
- * Cinematic easing, logarithmic altitude interpolation, and multi-waypoint path sampling
+ * Cinematic easing, logarithmic altitude interpolation, waypoint spline smoothing, and banking
  */
 import * as Cesium from 'cesium';
 
@@ -65,7 +65,7 @@ export function sampleTwoPointCamera(start, end, progress, easingKey = 'cubicInO
 }
 
 /**
- * Sample camera pose across multiple waypoints
+ * Sample camera pose across multiple waypoints with smooth heading transitions & banking
  */
 export function sampleWaypointCamera(waypoints, progress, easingKey = 'linear') {
   if (!waypoints || waypoints.length === 0) return null;
@@ -76,7 +76,7 @@ export function sampleWaypointCamera(waypoints, progress, easingKey = 'linear') 
       latitude: wp.latitude,
       height: wp.height || 2000,
       heading: 0,
-      pitch: -35,
+      pitch: -30,
       roll: 0,
     };
   }
@@ -93,10 +93,27 @@ export function sampleWaypointCamera(waypoints, progress, easingKey = 'linear') 
   const p0 = waypoints[segIndex];
   const p1 = waypoints[segIndex + 1];
 
-  // Calculate heading towards next waypoint
-  const dx = p1.longitude - p0.longitude;
-  const dy = p1.latitude - p0.latitude;
-  const computedHeading = (Math.atan2(dx, dy) * 180) / Math.PI;
+  // Current segment tangent heading
+  const dx0 = p1.longitude - p0.longitude;
+  const dy0 = p1.latitude - p0.latitude;
+  const heading0 = ((Math.atan2(dx0, dy0) * 180) / Math.PI + 360) % 360;
+
+  // Next segment tangent heading for gentle look-ahead
+  let heading1 = heading0;
+  if (segIndex + 2 < waypoints.length) {
+    const p2 = waypoints[segIndex + 2];
+    const dx1 = p2.longitude - p1.longitude;
+    const dy1 = p2.latitude - p1.latitude;
+    heading1 = ((Math.atan2(dx1, dy1) * 180) / Math.PI + 360) % 360;
+  }
+
+  // Smoothly blend heading as we approach next waypoint
+  const blend = Math.pow(segProgress, 2);
+  const smoothedHeading = interpolateAngle(heading0, heading1, blend * 0.45);
+
+  // Turn banking roll (FPV drone / aircraft banking effect)
+  const turnDelta = ((((heading1 - heading0 + 540) % 360) + 360) % 360) - 180;
+  const roll = Math.max(-10, Math.min(10, turnDelta * 0.12 * Math.sin(segProgress * Math.PI)));
 
   const lat = p0.latitude + (p1.latitude - p0.latitude) * segProgress;
   const lon = interpolateLongitude(p0.longitude, p1.longitude, segProgress);
@@ -106,9 +123,9 @@ export function sampleWaypointCamera(waypoints, progress, easingKey = 'linear') 
     longitude: lon,
     latitude: lat,
     height,
-    heading: computedHeading,
-    pitch: -30,
-    roll: 0,
+    heading: smoothedHeading,
+    pitch: -28,
+    roll,
   };
 }
 

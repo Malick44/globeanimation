@@ -5,6 +5,7 @@
 import { TEMPLATES, buildCameraForTemplate } from '../templates.js';
 import { VISUAL_THEMES } from '../state.js';
 import { searchLocations, parseCoordinates } from '../search/geocoder.js';
+import { parseRouteFile } from '../search/routeParser.js';
 import { showToast } from './toast.js';
 
 export class StudioSidebar {
@@ -200,29 +201,48 @@ export class StudioSidebar {
           </div>
         </div>
 
-        <!-- Waypoints List (For Route & Multi-stop) -->
+        <!-- Waypoints & Route Flyover Controls -->
+        <div class="section-divider"></div>
+        <div class="section-header">
+          <div class="flex-between">
+            <h4 class="sub-title">Route Flyover (${waypoints.length} waypoints)</h4>
+            <label class="route-upload-label" title="Import GPX or GeoJSON Route">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>Import GPX / GeoJSON</span>
+              <input type="file" id="file-route-upload" accept=".gpx,.geojson,.json" style="display: none;" />
+            </label>
+          </div>
+          <span class="section-hint">Import trails, drives, or flights, or choose an inspiration preset</span>
+        </div>
+
         ${
           waypoints.length > 0
             ? `
-          <div class="section-divider"></div>
-          <div class="section-header">
-            <h4 class="sub-title">Route Waypoints (${waypoints.length})</h4>
-          </div>
           <div class="waypoint-list">
             ${waypoints
               .map(
                 (wp, idx) => `
               <div class="waypoint-item">
                 <span class="wp-num">${idx + 1}</span>
-                <span class="wp-name">${wp.name || `Waypoint ${idx + 1}`}</span>
-                <span class="wp-coords font-mono">${(wp.latitude || 0).toFixed(2)}°, ${(wp.longitude || 0).toFixed(2)}°</span>
+                <span class="wp-name" title="${wp.name || ''}">${wp.name || `Waypoint ${idx + 1}`}</span>
+                <span class="wp-coords font-mono">${(wp.latitude || 0).toFixed(3)}°, ${(wp.longitude || 0).toFixed(3)}°</span>
+                <button class="wp-del-btn" data-wp-idx="${idx}" title="Delete waypoint">&times;</button>
               </div>
             `
               )
               .join('')}
           </div>
+          <button id="btn-clear-route" class="secondary-btn btn-sm mt-2">Clear Route</button>
         `
-            : ''
+            : `
+          <div class="empty-route-box">
+            <p class="empty-route-tip">No route loaded. Upload a <code>.gpx</code> / <code>.geojson</code> file or try the <strong>Mount Everest Expedition</strong> or <strong>Paris & Seine</strong> presets.</p>
+          </div>
+        `
         }
       </div>
     `;
@@ -545,6 +565,80 @@ export class StudioSidebar {
       if (titleEvt) titleEvt.at = val;
       const lbl = this.element.querySelector('#title-time-val');
       if (lbl) lbl.textContent = `${val.toFixed(1)}s`;
+    });
+
+    // GPX / GeoJSON Route Upload
+    const routeFileInput = this.element.querySelector('#file-route-upload');
+    routeFileInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const waypoints = await parseRouteFile(file);
+        const first = waypoints[0];
+        const last = waypoints[waypoints.length - 1];
+
+        this.store.updateScene({
+          template: 'route-flyover',
+          camera: {
+            ...this.store.scene.camera,
+            start: {
+              longitude: first.longitude,
+              latitude: first.latitude,
+              height: first.height || 2000,
+              heading: 45,
+              pitch: -28,
+              roll: 0,
+            },
+            end: {
+              longitude: last.longitude,
+              latitude: last.latitude,
+              height: last.height || 1800,
+              heading: 65,
+              pitch: -32,
+              roll: 0,
+            },
+            easing: 'linear',
+            waypoints,
+          },
+          location: {
+            ...this.store.scene.location,
+            name: file.name.replace(/\.[^/.]+$/, ''),
+            latitude: first.latitude,
+            longitude: first.longitude,
+          },
+        });
+
+        this.globeEngine.syncScene(this.store.scene);
+        this.globeEngine.seek(this.store.scene, 0);
+        showToast(`Imported ${waypoints.length} route trackpoints from ${file.name}`, 'success');
+        this.render();
+      } catch (err) {
+        showToast(`Route import failed: ${err.message}`, 'error');
+      }
+    });
+
+    // Clear Route
+    this.element.querySelector('#btn-clear-route')?.addEventListener('click', () => {
+      this.store.updateCamera({ waypoints: [] });
+      this.globeEngine.syncScene(this.store.scene);
+      showToast('Route cleared', 'info');
+      this.render();
+    });
+
+    // Delete single waypoint
+    this.element.querySelectorAll('.wp-del-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.wpIdx, 10);
+        const wps = [...(this.store.scene.camera.waypoints || [])];
+        if (idx >= 0 && idx < wps.length) {
+          wps.splice(idx, 1);
+          this.store.updateCamera({ waypoints: wps });
+          this.globeEngine.syncScene(this.store.scene);
+          this.render();
+        }
+      });
     });
   }
 
