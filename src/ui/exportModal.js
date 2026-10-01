@@ -21,6 +21,7 @@ export class ExportModal {
     this.isRendering = false;
     this.renderProgress = 0;
     this.renderedResult = null;
+    this.selectedFormat = 'mp4';
 
     this.element = document.createElement('div');
     this.element.className = 'studio-modal-backdrop hidden';
@@ -122,6 +123,26 @@ export class ExportModal {
             <div class="spec-card">
               <span class="spec-label">Target Bitrate</span>
               <span class="spec-value font-mono">16.0 Mbps (Broadcast High)</span>
+            </div>
+          </div>
+
+          <div class="field-group mt-3">
+            <label class="field-label">Video Format Container</label>
+            <div class="format-choice-group">
+              <label class="format-radio-card ${this.selectedFormat === 'mp4' ? 'active' : ''}">
+                <input type="radio" name="export-format" value="mp4" ${this.selectedFormat === 'mp4' ? 'checked' : ''} />
+                <div class="format-radio-text">
+                  <span class="format-radio-title">MP4 Video (.mp4)</span>
+                  <span class="format-radio-sub">H.264 / AAC • Universal (Instagram, TikTok, YouTube, QuickTime, Premiere, iOS)</span>
+                </div>
+              </label>
+              <label class="format-radio-card ${this.selectedFormat === 'webm' ? 'active' : ''}">
+                <input type="radio" name="export-format" value="webm" ${this.selectedFormat === 'webm' ? 'checked' : ''} />
+                <div class="format-radio-text">
+                  <span class="format-radio-title">WebM Video (.webm)</span>
+                  <span class="format-radio-sub">VP9 / Opus • Modern open web format</span>
+                </div>
+              </label>
             </div>
           </div>
 
@@ -281,6 +302,14 @@ export class ExportModal {
       });
     });
 
+    // Format selection radios
+    this.element.querySelectorAll('input[name="export-format"]').forEach((radio) => {
+      radio.addEventListener('change', (e) => {
+        this.selectedFormat = e.target.value;
+        this.render();
+      });
+    });
+
     // Start video render
     this.element.querySelector('#btn-start-render')?.addEventListener('click', async () => {
       this.isRendering = true;
@@ -291,7 +320,7 @@ export class ExportModal {
         const result = await exportVideo(
           this.globeEngine,
           this.store.scene,
-          {},
+          { format: this.selectedFormat },
           ({ percent, frame, totalFrames }) => {
             this.renderProgress = percent;
             const bar = this.element.querySelector('#modal-progress-bar');

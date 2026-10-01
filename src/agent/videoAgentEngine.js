@@ -242,13 +242,14 @@ export class VideoAgentEngine {
 
     // 5. If autoRender is requested, trigger video exporter
     if (options.autoRender) {
+      const videoFormat = options.videoFormat || (parsedIntent.preferWebm ? 'webm' : 'mp4');
       onProgress({
         step: 'rendering',
-        message: 'Auto-rendering 60FPS video clip with compositing...',
+        message: `Auto-rendering 60FPS ${videoFormat.toUpperCase()} video clip with compositing...`,
         progress: 0.9,
       });
 
-      const videoResult = await exportVideo(this.globeEngine, this.store.scene, {}, (renderProgress) => {
+      const videoResult = await exportVideo(this.globeEngine, this.store.scene, { format: videoFormat }, (renderProgress) => {
         const frameNum = renderProgress.frame ?? 0;
         const total = renderProgress.totalFrames ?? 1;
         const pct = renderProgress.percent ?? Math.round((frameNum / total) * 100);

@@ -1281,6 +1281,59 @@ html, body {
   color: var(--text-primary);
 }
 
+.format-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format-radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.format-radio-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.format-radio-card.active {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.15);
+}
+
+.format-radio-card input[type="radio"] {
+  accent-color: var(--accent-amber);
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.format-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.format-radio-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.format-radio-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .render-prompt-card {
   padding: 20px;
   background: rgba(255, 255, 255, 0.02);

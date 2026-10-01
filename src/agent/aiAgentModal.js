@@ -157,7 +157,8 @@ export class AIAgentModal {
               <label class="field-label">Action</label>
               <select id="agent-action-select" class="studio-select">
                 <option value="preview" selected>🎬 Create & Play Preview</option>
-                <option value="render">⚡ Auto Create & Render Video (.webm)</option>
+                <option value="render-mp4">⚡ Auto Create & Render MP4 Video (.mp4)</option>
+                <option value="render-webm">⚡ Auto Create & Render WebM Video (.webm)</option>
               </select>
             </div>
 
@@ -262,13 +263,14 @@ export class AIAgentModal {
 
     const action = this.element.querySelector('#agent-action-select')?.value || 'preview';
     const formatOverride = this.element.querySelector('#agent-format-select')?.value;
-    const autoRender = action === 'render';
+    const autoRender = action.startsWith('render');
+    const videoFormat = action === 'render-webm' ? 'webm' : 'mp4';
 
     this.isRunning = true;
     const execBtn = this.element.querySelector('#btn-agent-execute');
     const execText = this.element.querySelector('#btn-agent-text');
     if (execBtn) execBtn.disabled = true;
-    if (execText) execText.textContent = autoRender ? 'Rendering Video...' : 'Directing Scene...';
+    if (execText) execText.textContent = autoRender ? `Rendering ${videoFormat.toUpperCase()} Video...` : 'Directing Scene...';
 
     // Clear logs
     const consoleElem = this.element.querySelector('#agent-console-log');
@@ -280,6 +282,7 @@ export class AIAgentModal {
 
       const result = await this.agentEngine.createVideoFromPrompt(prompt, {
         autoRender,
+        videoFormat,
         formatOverride: formatOverride !== 'auto' ? formatOverride : null,
         onProgress: (evt) => {
           this.addLog(evt.step, evt.message, evt.progress);

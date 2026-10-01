@@ -5,20 +5,26 @@
  */
 import { ambience } from '../audio/ambience.js';
 
-export function getSupportedMimeType() {
-  const types = [
+export function getSupportedMimeType(preferred = 'mp4') {
+  const mp4Types = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+  ];
+  const webmTypes = [
     'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
     'video/webm',
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
   ];
+
+  const types = preferred === 'webm' ? [...webmTypes, ...mp4Types] : [...mp4Types, ...webmTypes];
+
   for (const type of types) {
-    if (MediaRecorder.isTypeSupported(type)) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
       return type;
     }
   }
-  return 'video/webm';
+  return 'video/mp4';
 }
 
 /**
@@ -365,7 +371,8 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
     }
   }
 
-  const mimeType = getSupportedMimeType();
+  const preferredFormat = options.format || options.videoFormat || 'mp4';
+  const mimeType = getSupportedMimeType(preferredFormat);
   const mediaRecorder = new MediaRecorder(stream, {
     mimeType,
     videoBitsPerSecond: 16000000, // High quality 16 Mbps
