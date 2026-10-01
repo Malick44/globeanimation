@@ -10,7 +10,7 @@ function ensureContainer() {
     container.id = 'toast-container';
     container.style.cssText = `
       position: fixed;
-      top: 24px;
+      top: 76px;
       right: 24px;
       z-index: 99999;
       display: flex;

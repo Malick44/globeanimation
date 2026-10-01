@@ -42,16 +42,17 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Initialize Cesium Globe Engine
-  const globeEngine = new GlobeEngine(cesiumContainer, () => {
+  let globeEngineInstance = null;
+  globeEngineInstance = new GlobeEngine(cesiumContainer, (engine) => {
     // Sync initial scene
-    globeEngine.syncScene(store.scene);
-    globeEngine.seek(store.scene, 0);
+    engine.syncScene(store.scene);
+    engine.seek(store.scene, 0);
 
     // Initialize Framing Guides
     new FramingGuides(cesiumContainer, store);
 
     // Initialize Export Modal
-    const exportModal = new ExportModal(store, globeEngine);
+    const exportModal = new ExportModal(store, engine);
 
     let timelineInstance = null;
 
@@ -69,7 +70,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const tick = (now) => {
           const elapsed = (now - startTime) / 1000;
           if (elapsed <= duration) {
-            globeEngine.seek(store.scene, elapsed / duration);
+            engine.seek(store.scene, elapsed / duration);
             requestAnimationFrame(tick);
           }
         };
@@ -80,13 +81,13 @@ window.addEventListener('DOMContentLoaded', () => {
       new StudioHeader(
         headerMount,
         store,
-        globeEngine,
+        engine,
         () => exportModal.show('render'),
         () => exportModal.show('json')
       );
 
-      new StudioSidebar(sidebarMount, store, globeEngine);
-      timelineInstance = new StudioTimeline(timelineMount, store, globeEngine);
+      new StudioSidebar(sidebarMount, store, engine);
+      timelineInstance = new StudioTimeline(timelineMount, store, engine);
 
       // Welcome Toast
       setTimeout(() => {
@@ -97,17 +98,17 @@ window.addEventListener('DOMContentLoaded', () => {
     // Expose programmatic API on window for automated rendering / Puppeteer / testing
     window.__GLOBE_STUDIO__ = {
       store,
-      globeEngine,
+      globeEngine: engine,
       timeline: timelineInstance,
-      exportVideo: (options, onProgress) => exportVideo(globeEngine, store.scene, options, onProgress),
-      captureSnapshot: (filename) => captureSnapshot(globeEngine, store.scene, filename),
-      seek: (progress) => globeEngine.seek(store.scene, progress),
+      exportVideo: (options, onProgress) => exportVideo(engine, store.scene, options, onProgress),
+      captureSnapshot: (filename) => captureSnapshot(engine, store.scene, filename),
+      seek: (progress) => engine.seek(store.scene, progress),
       loadPreset: (id) => {
         const p = PRESETS.find((item) => item.id === id);
         if (p) {
           store.loadScene(p);
-          globeEngine.syncScene(store.scene);
-          globeEngine.seek(store.scene, 0);
+          engine.syncScene(store.scene);
+          engine.seek(store.scene, 0);
         }
       },
     };

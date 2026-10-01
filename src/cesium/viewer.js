@@ -15,11 +15,12 @@ export class GlobeEngine {
     this.init(onReady);
   }
 
-  init(onReady) {
+  async init(onReady) {
     // Disable Cesium Ion default warning banner
     Cesium.Ion.defaultAccessToken = '';
 
     this.viewer = new Cesium.Viewer(this.container, {
+      baseLayer: false,
       animation: false,
       timeline: false,
       geocoder: false,
@@ -57,7 +58,7 @@ export class GlobeEngine {
     }
 
     // Set default imagery
-    applyThemeImagery(this.viewer, 'documentary');
+    await applyThemeImagery(this.viewer, 'documentary');
 
     // Initialize Overlay Manager
     this.overlayManager = new OverlayManager(this.viewer);
