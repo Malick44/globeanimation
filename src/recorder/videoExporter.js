@@ -218,6 +218,9 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
   if (scene.audio?.enabled) {
     try {
       ambience.start(scene.audio.volume || 0.6);
+      if (scene.template === 'globe-to-place' || (scene.camera?.start?.height || 0) > 50000) {
+        ambience.triggerWhoosh(Math.min(5, durationSeconds * 0.65));
+      }
       audioTrack = ambience.getAudioTrack();
       if (audioTrack) {
         stream.addTrack(audioTrack);

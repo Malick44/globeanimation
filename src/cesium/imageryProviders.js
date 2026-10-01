@@ -22,10 +22,13 @@ export function createOsmProvider() {
 }
 
 export function createCartoDarkProvider() {
-  return new Cesium.UrlTemplateImageryProvider({
-    url: 'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-    credit: '© CartoDB, © OpenStreetMap contributors',
-  });
+  return Cesium.ArcGisMapServerImageryProvider.fromUrl(
+    'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer',
+    {
+      credit: 'Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community',
+      enablePickFeatures: false,
+    }
+  );
 }
 
 /**
@@ -42,7 +45,7 @@ export async function applyThemeImagery(viewer, themeKey) {
     if (themeKey === 'minimal-vector') {
       providerPromise = Promise.resolve(createOsmProvider());
     } else if (themeKey === 'dark-data') {
-      providerPromise = Promise.resolve(createCartoDarkProvider());
+      providerPromise = createCartoDarkProvider();
     } else {
       // Documentary & Satellite Cinematic default to Esri satellite
       providerPromise = createEsriSatelliteProvider();

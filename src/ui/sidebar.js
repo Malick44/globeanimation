@@ -644,10 +644,43 @@ export class StudioSidebar {
 
   applySelectedLocation(loc) {
     this.store.updateLocation(loc);
+
+    // Update 3D Track Point Overlay for selected location
+    const stalkHeight = Math.max(260, (Number(loc.height) || 0) + 260);
+    const newOverlays = [
+      {
+        id: 'pin-' + Date.now(),
+        type: 'pin',
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        height: Number(loc.height) || 0,
+        label: loc.name,
+        sublabel: loc.description || '',
+        color: '#f59e0b',
+        icon: 'location_on',
+        pulse: true,
+        stalkHeight,
+      },
+    ];
+
+    // Update Title Card on Timeline
+    const timeline = [...(this.store.scene.timeline || [])];
+    const titleEvt = timeline.find((t) => t.action === 'showTitle');
+    if (titleEvt) {
+      titleEvt.text = loc.name.toUpperCase();
+      titleEvt.subtext = `${loc.latitude.toFixed(4)}°, ${loc.longitude.toFixed(4)}° • ${loc.description || ''}`;
+    }
+
     const newCamera = buildCameraForTemplate(this.store.scene.template, loc, this.store.scene.camera);
-    this.store.updateCamera(newCamera);
+    this.store.updateScene({
+      overlays: newOverlays,
+      camera: newCamera,
+      timeline,
+    });
+
     this.globeEngine.syncScene(this.store.scene);
     this.globeEngine.seek(this.store.scene, 0);
     showToast(`Navigated to ${loc.name}`, 'success');
+    this.render();
   }
 }

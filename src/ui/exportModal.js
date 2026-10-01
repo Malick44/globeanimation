@@ -1,16 +1,23 @@
 /**
- * Video Render & Scene JSON Export/Import Modal
- * Handles video generation, scene file download/upload, and attribution manifest
+ * Video Render & Scene JSON / After Effects JSX Export Modal
+ * Handles MP4/WebM video generation, After Effects .jsx camera tracking export,
+ * scene definition file download/upload, and attribution manifest
  */
 import { exportVideo } from '../recorder/videoExporter.js';
-import { exportSceneAsJson, copySceneJsonToClipboard, readSceneFile } from '../recorder/sceneIo.js';
+import {
+  exportSceneAsJson,
+  copySceneJsonToClipboard,
+  readSceneFile,
+  generateAfterEffectsJsx,
+  exportAfterEffectsJsx,
+} from '../recorder/sceneIo.js';
 import { showToast } from './toast.js';
 
 export class ExportModal {
   constructor(store, globeEngine) {
     this.store = store;
     this.globeEngine = globeEngine;
-    this.activeTab = 'render'; // 'render' | 'json' | 'attribution'
+    this.activeTab = 'render'; // 'render' | 'ae-jsx' | 'json' | 'attribution'
     this.isRendering = false;
     this.renderProgress = 0;
     this.renderedResult = null;
@@ -60,6 +67,14 @@ export class ExportModal {
             </svg>
             <span>Render Video</span>
           </button>
+          <button class="modal-tab-btn ${this.activeTab === 'ae-jsx' ? 'active' : ''}" data-tab="ae-jsx">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <span>After Effects (.jsx)</span>
+          </button>
           <button class="modal-tab-btn ${this.activeTab === 'json' ? 'active' : ''}" data-tab="json">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="16 18 22 12 16 6"></polyline>
@@ -98,15 +113,15 @@ export class ExportModal {
             </div>
             <div class="spec-card">
               <span class="spec-label">Duration & Frame Count</span>
-              <span class="spec-value font-mono">${format.durationSeconds}s @ ${format.fps}fps (${totalFrames} frames)</span>
+              <span class="spec-value font-mono">${format.durationSeconds || 8}s • ${totalFrames} frames</span>
             </div>
             <div class="spec-card">
-              <span class="spec-label">Visual Theme</span>
-              <span class="spec-value" style="text-transform: capitalize;">${scene.theme}</span>
+              <span class="spec-label">Motion Graphics & Audio</span>
+              <span class="spec-value font-mono">3D Track Badge + Sound Design</span>
             </div>
             <div class="spec-card">
-              <span class="spec-label">Audio Track</span>
-              <span class="spec-value">${scene.audio?.enabled ? 'Ambient Cinematic Drone (Active)' : 'Muted'}</span>
+              <span class="spec-label">Target Bitrate</span>
+              <span class="spec-value font-mono">16.0 Mbps (Broadcast High)</span>
             </div>
           </div>
 
@@ -114,14 +129,14 @@ export class ExportModal {
             this.isRendering
               ? `
             <div class="render-progress-card mt-4">
-              <div class="progress-info">
-                <span class="progress-status" id="render-status-text">Recording 3D Globe Frames...</span>
+              <div class="progress-info-row">
+                <span class="progress-status" id="render-status-text">Recording 3D Globe Animation...</span>
                 <span class="progress-pct font-mono" id="render-pct-text">${this.renderProgress}%</span>
               </div>
-              <div class="progress-bar-bg">
+              <div class="progress-bar-container">
                 <div class="progress-bar-fill" id="modal-progress-bar" style="width: ${this.renderProgress}%;"></div>
               </div>
-              <p class="render-tip">Rendering with smooth camera interpolation and animated title overlays.</p>
+              <p class="progress-note">Please keep this browser window in focus while recording for maximum frame fidelity.</p>
             </div>
           `
               : this.renderedResult
@@ -129,7 +144,7 @@ export class ExportModal {
             <div class="render-complete-card mt-4">
               <div class="complete-icon">✓</div>
               <h3 class="complete-title">Video Rendered Successfully!</h3>
-              <p class="complete-desc">Your video has been exported at full ${format.width}x${format.height} resolution.</p>
+              <p class="complete-desc">Your video with 3D tracked badge, leader stalk, and supersonic entry sound has been exported at full ${format.width}x${format.height} resolution.</p>
               <div class="complete-actions">
                 <button id="btn-re-download" class="primary-btn glow">Download Video Again</button>
                 <button id="btn-render-new" class="secondary-btn">Render Another</button>
@@ -140,7 +155,7 @@ export class ExportModal {
             <div class="render-prompt-card mt-4">
               <div class="prompt-text">
                 <h3>Ready to Render Video</h3>
-                <p>The client-side engine will capture the 3D globe animation frame-by-frame, compositing cinematic titles, location pins, and ambient audio into an MP4/WebM video file.</p>
+                <p>The client-side engine will capture the 3D globe animation frame-by-frame, compositing After Effects-style 3D tracked badges, leader lines, ground pulse beacons, and supersonic atmospheric entry sound into an export-ready MP4/WebM video.</p>
               </div>
               <button id="btn-start-render" class="primary-btn glow large-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -152,6 +167,33 @@ export class ExportModal {
             </div>
           `
           }
+        </div>
+      `;
+    }
+
+    if (this.activeTab === 'ae-jsx') {
+      const jsxCode = generateAfterEffectsJsx(scene);
+      return `
+        <div class="json-panel">
+          <p class="json-desc">Export 3D Camera tracking keyframes and 3D Null Objects for Adobe After Effects. Use <code>File &gt; Scripts &gt; Run Script File...</code> in After Effects to import the 3D camera trajectory and attach your custom motion graphics layers to the track points.</p>
+          <div class="json-actions-bar">
+            <button id="btn-download-jsx" class="primary-btn glow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Download After Effects (.jsx)</span>
+            </button>
+            <button id="btn-copy-jsx" class="secondary-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy JSX Code</span>
+            </button>
+          </div>
+          <pre class="json-code-box font-mono">${jsxCode}</pre>
         </div>
       `;
     }
@@ -290,6 +332,18 @@ export class ExportModal {
     this.element.querySelector('#btn-render-new')?.addEventListener('click', () => {
       this.renderedResult = null;
       this.render();
+    });
+
+    // After Effects JSX Download & Copy
+    this.element.querySelector('#btn-download-jsx')?.addEventListener('click', () => {
+      exportAfterEffectsJsx(this.store.scene);
+      showToast('Downloaded After Effects 3D Camera script (.jsx)', 'success');
+    });
+
+    this.element.querySelector('#btn-copy-jsx')?.addEventListener('click', async () => {
+      const code = generateAfterEffectsJsx(this.store.scene);
+      await navigator.clipboard.writeText(code);
+      showToast('After Effects JSX copied to clipboard!', 'success');
     });
 
     // Copy JSON

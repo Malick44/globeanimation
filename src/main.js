@@ -83,7 +83,8 @@ window.addEventListener('DOMContentLoaded', () => {
         store,
         engine,
         () => exportModal.show('render'),
-        () => exportModal.show('json')
+        () => exportModal.show('json'),
+        () => exportModal.show('ae-jsx')
       );
 
       new StudioSidebar(sidebarMount, store, engine);

@@ -7,12 +7,13 @@ import { showToast } from './toast.js';
 import { captureSnapshot } from '../recorder/videoExporter.js';
 
 export class StudioHeader {
-  constructor(containerElement, store, globeEngine, onOpenExport, onOpenJson) {
+  constructor(containerElement, store, globeEngine, onOpenExport, onOpenJson, onOpenJsx) {
     this.container = containerElement;
     this.store = store;
     this.globeEngine = globeEngine;
     this.onOpenExport = onOpenExport;
     this.onOpenJson = onOpenJson;
+    this.onOpenJsx = onOpenJsx;
 
     this.element = document.createElement('header');
     this.element.className = 'studio-header';
@@ -94,6 +95,16 @@ export class StudioHeader {
           <span>Snapshot</span>
         </button>
 
+        <!-- After Effects JSX Export Button -->
+        <button id="btn-export-jsx" class="tool-btn" title="Export 3D Camera & Track Points for Adobe After Effects">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <span>AE (.jsx)</span>
+        </button>
+
         <!-- Scene JSON Button -->
         <button id="btn-scene-json" class="tool-btn" title="Import / Export Scene JSON Definition">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -168,6 +179,11 @@ export class StudioHeader {
         .replace(/[^a-z0-9]+/g, '-');
       captureSnapshot(this.globeEngine, this.store.scene, `${safeName}.png`);
       showToast('High-Res PNG Snapshot downloaded!', 'success');
+    });
+
+    // After Effects JSX button
+    this.element.querySelector('#btn-export-jsx')?.addEventListener('click', () => {
+      if (this.onOpenJsx) this.onOpenJsx();
     });
 
     // Scene JSON button

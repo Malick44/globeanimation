@@ -51,7 +51,12 @@ export function sampleTwoPointCamera(start, end, progress, easingKey = 'cubicInO
   const lon = interpolateLongitude(start.longitude, end.longitude, t);
   const height = interpolateHeight(start.height, end.height, t);
   const heading = interpolateAngle(start.heading || 0, end.heading || 0, t);
-  const pitch = (start.pitch || -35) + ((end.pitch || -35) - (start.pitch || -35)) * t;
+
+  // For orbital space-to-city zoom-ins, stay top-down in space and tilt up near destination for dramatic skyline reveal
+  const startPitch = start.pitch ?? -35;
+  const endPitch = end.pitch ?? -35;
+  const pitchProgress = startPitch < -65 ? Math.pow(t, 2.6) : t;
+  const pitch = startPitch + (endPitch - startPitch) * pitchProgress;
   const roll = interpolateAngle(start.roll || 0, end.roll || 0, t);
 
   return {

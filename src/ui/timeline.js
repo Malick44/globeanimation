@@ -242,11 +242,15 @@ export class StudioTimeline {
     this.element.querySelector('.play-icon')?.classList.add('hidden');
     this.element.querySelector('.pause-icon')?.classList.remove('hidden');
 
+    const duration = this.store.scene.format?.durationSeconds || 8;
+
     if (this.store.scene.audio?.enabled) {
       ambience.start(this.store.scene.audio.volume || 0.6);
+      if (this.store.scene.template === 'globe-to-place' || (this.store.scene.camera?.start?.height || 0) > 50000) {
+        ambience.triggerWhoosh(Math.min(5, duration * 0.65));
+      }
     }
 
-    const duration = this.store.scene.format?.durationSeconds || 8;
     this.lastFrameTime = performance.now();
 
     const loop = (now) => {
@@ -260,6 +264,9 @@ export class StudioTimeline {
       if (currentTime >= duration) {
         if (this.store.playback.loop) {
           currentTime = 0;
+          if (this.store.scene.audio?.enabled && (this.store.scene.template === 'globe-to-place' || (this.store.scene.camera?.start?.height || 0) > 50000)) {
+            ambience.triggerWhoosh(Math.min(5, duration * 0.65));
+          }
         } else {
           currentTime = duration;
           this.pause();

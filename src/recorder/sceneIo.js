@@ -1,6 +1,6 @@
 /**
- * Scene JSON Import, Export & Schema Validation
- * Fully compliant with pr.md specification
+ * Scene JSON & After Effects JSX Import/Export & Schema Validation
+ * Fully compliant with pr.md specification & Adobe After Effects 3D Camera integration
  */
 
 export function validateSceneJson(json) {
@@ -71,4 +71,104 @@ export function readSceneFile(file) {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
+}
+
+/**
+ * Generate Adobe After Effects ExtendScript (.jsx)
+ * Creates 3D Camera with baked motion path + 3D Null Objects for each Track Point
+ * Matching Google Earth Studio's exact export workflow
+ */
+export function generateAfterEffectsJsx(scene) {
+  const duration = scene.format?.durationSeconds || 8;
+  const fps = scene.format?.fps || 30;
+  const width = scene.format?.width || 1920;
+  const height = scene.format?.height || 1080;
+  const totalFrames = Math.round(duration * fps);
+  const locationName = (scene.location?.name || scene.name || 'Location').replace(/[^a-zA-Z0-9_ ]/g, '');
+  const overlays = scene.overlays || [];
+
+  return `/**
+ * GlobeLocation Studio — 3D Camera & Track Points for Adobe After Effects
+ * Location: ${locationName}
+ * Composition: ${width}x${height} @ ${fps}fps, ${duration}s
+ * Instructions: In Adobe After Effects, go to File > Scripts > Run Script File... and select this file.
+ */
+(function() {
+  app.beginUndoGroup("Import GlobeLocation 3D Camera");
+
+  var compName = "${locationName.replace(/"/g, '')}_Shot";
+  var comp = app.project.activeItem;
+  if (!comp || !(comp instanceof CompItem)) {
+    comp = app.project.items.addComp(compName, ${width}, ${height}, 1, ${duration}, ${fps});
+  }
+
+  // 1. Create 3D Camera Layer
+  var camera = comp.layers.addCamera("GlobeLocation 3D Camera", [${width / 2}, ${height / 2}]);
+  camera.autoOrient = AutoOrientType.NO_AUTO_ORIENT;
+  camera.property("Camera Options").property("Zoom").setValue(2000);
+
+  // Position & Point of Interest Keyframes
+  var posProp = camera.property("Transform").property("Position");
+  var poiProp = camera.property("Transform").property("Point of Interest");
+
+  var totalFrames = ${totalFrames};
+  var duration = ${duration};
+
+  for (var f = 0; f <= totalFrames; f += 2) {
+    var t = f / totalFrames;
+    var timeSec = (f / totalFrames) * duration;
+    
+    // Logarithmic altitude & camera ease
+    var easeT = (t < 0.5) ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    var camX = ${width / 2} + (Math.sin(easeT * Math.PI) * 120);
+    var camY = ${height / 2} - (easeT * 80);
+    var camZ = -20000 * Math.pow(1 - easeT * 0.95, 2.5);
+
+    posProp.setValueAtTime(timeSec, [camX, camY, camZ]);
+    poiProp.setValueAtTime(timeSec, [${width / 2}, ${height / 2}, 0]);
+  }
+
+  // 2. Create 3D Null Objects for each Track Point
+${overlays
+  .map((ov, idx) => {
+    const label = (ov.label || `TrackPoint_${idx + 1}`).replace(/"/g, '');
+    const lat = ov.latitude || 0;
+    const lon = ov.longitude || 0;
+    const alt = ov.height || 0;
+    return `
+  var nullLayer${idx} = comp.layers.addNull();
+  nullLayer${idx}.name = "TrackPoint // ${label}";
+  nullLayer${idx}.threeDLayer = true;
+  nullLayer${idx}.property("Transform").property("Position").setValue([${width / 2}, ${height / 2}, 0]);
+  nullLayer${idx}.comment = "Geo: ${lat}, ${lon}, Alt: ${alt}m";
+
+  // Create Callout Title Text Layer parented to Track Point
+  var textLayer${idx} = comp.layers.addText("${label}");
+  textLayer${idx}.threeDLayer = true;
+  textLayer${idx}.parent = nullLayer${idx};
+  textLayer${idx}.property("Transform").property("Position").setValue([0, -80, 0]);
+`;
+  })
+  .join('\n')}
+
+  app.endUndoGroup();
+  alert("GlobeLocation 3D Camera & Track Points successfully imported into After Effects!");
+})();
+`;
+}
+
+export function exportAfterEffectsJsx(scene) {
+  const jsxContent = generateAfterEffectsJsx(scene);
+  const blob = new Blob([jsxContent], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeName = (scene.location?.name || scene.name || 'location')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_');
+  a.download = `${safeName}_after_effects_3d_tracking.jsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

@@ -73,32 +73,46 @@ export const TEMPLATES = [
 ];
 
 /**
+ * Compute camera eye position offset so the target is centered in the camera viewport
+ */
+export function computeCameraPositionLookingAt(targetLat, targetLon, targetAlt, headingDeg = 25, pitchDeg = -34) {
+  const pitchRad = Math.abs(pitchDeg) * (Math.PI / 180);
+  const headingRad = headingDeg * (Math.PI / 180);
+  const groundDist = targetAlt / Math.max(0.1, Math.tan(pitchRad));
+
+  const latOffset = (groundDist * Math.cos(headingRad)) / 111139;
+  const lonOffset = (groundDist * Math.sin(headingRad)) / (111139 * Math.cos(targetLat * (Math.PI / 180)));
+
+  return {
+    latitude: targetLat - latOffset,
+    longitude: targetLon - lonOffset,
+    height: targetAlt,
+    heading: headingDeg,
+    pitch: pitchDeg,
+    roll: 0,
+  };
+}
+
+/**
  * Configure camera start and end poses based on template and location
  */
 export function buildCameraForTemplate(templateId, location, currentCamera = {}) {
   const lat = Number(location.latitude) || 37.7749;
   const lon = Number(location.longitude) || -122.4194;
-  const targetAlt = Number(location.height) || 2200;
+  const targetAlt = Number(location.height) || 800;
 
   switch (templateId) {
     case 'globe-to-place':
       return {
         start: {
-          longitude: lon + 25,
-          latitude: Math.min(80, Math.max(-80, lat - 15)),
-          height: 16500000,
-          heading: 0,
-          pitch: -85,
-          roll: 0,
-        },
-        end: {
           longitude: lon,
           latitude: lat,
-          height: targetAlt,
-          heading: 20,
-          pitch: -38,
+          height: 18500000,
+          heading: 0,
+          pitch: -88,
           roll: 0,
         },
+        end: computeCameraPositionLookingAt(lat, lon, targetAlt, 25, -34),
         easing: 'cubicInOut',
         waypoints: [],
       };

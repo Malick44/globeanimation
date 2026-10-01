@@ -77,6 +77,44 @@ class AmbienceSynthesizer {
     if (!this.ctx) this.init();
     return this.destination?.stream?.getAudioTracks()[0] || null;
   }
+
+  triggerWhoosh(duration = 4.0) {
+    if (!this.ctx) this.init();
+    try {
+      const bufferSize = Math.floor(this.ctx.sampleRate * Math.min(6, duration));
+      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+
+      const whiteNoise = this.ctx.createBufferSource();
+      whiteNoise.buffer = noiseBuffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 3.5;
+
+      const gain = this.ctx.createGain();
+      const now = this.ctx.currentTime;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.28, now + duration * 0.45);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+      filter.frequency.setValueAtTime(180, now);
+      filter.frequency.exponentialRampToValueAtTime(1200, now + duration * 0.45);
+      filter.frequency.exponentialRampToValueAtTime(240, now + duration);
+
+      whiteNoise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      whiteNoise.start(now);
+      whiteNoise.stop(now + duration + 0.2);
+    } catch (e) {
+      console.warn('Whoosh synthesis error:', e);
+    }
+  }
 }
 
 export const ambience = new AmbienceSynthesizer();
