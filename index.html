@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GlobeLocation Studio — Cinematic Map & Location Video Creator</title>
+  <meta name="description" content="Generate cinematic globe-to-location animations, aerial drone reveals, and route flyovers for video creators, explainers, and documentaries." />
+  <meta name="keywords" content="cesium, 3d globe, map video, location intro, video creator, motion graphics, drone flyover" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+
+  <!-- Google Fonts: Outfit (Headings), Inter (UI), JetBrains Mono (Telemetry) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app-root">
+    <!-- Dynamic Header -->
+    <div id="header-mount"></div>
+
+    <!-- Main Workspace -->
+    <main class="studio-workspace">
+      <!-- Dynamic Inspector Sidebar -->
+      <div id="sidebar-mount"></div>
+
+      <!-- 3D Globe Viewport -->
+      <div id="cesium-container"></div>
+    </main>
+
+    <!-- Dynamic Timeline Dock -->
+    <div id="timeline-mount"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
