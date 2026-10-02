@@ -5,154 +5,161 @@
  */
 import * as Cesium from 'cesium';
 
+const BADGE_PIXEL_RATIO = 3; // Badge is drawn at 3x and shown at 1/3 scale so text stays crisp in 1080p+ exports
+const BADGE_FONTS = ['800 30px "Outfit"', '500 15px "Inter"', '600 12px "JetBrains Mono"'];
+
 /**
- * Generate an After Effects-style 3D Tracked HUD Callout Badge
+ * Resolve once the web fonts used by the badge are loaded (canvas text silently falls back otherwise)
+ */
+export function loadBadgeFonts() {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  return Promise.all(BADGE_FONTS.map((f) => document.fonts.load(f).catch(() => {}))).then(() => {});
+}
+
+function formatCoords(latitude, longitude) {
+  const lat = `${Math.abs(latitude).toFixed(4)}° ${latitude >= 0 ? 'N' : 'S'}`;
+  const lon = `${Math.abs(longitude).toFixed(4)}° ${longitude >= 0 ? 'E' : 'W'}`;
+  return `${lat}  ·  ${lon}`;
+}
+
+/**
+ * Generate the location callout badge: glass card with pin icon, title, subtitle and coordinates,
+ * plus a pointer notch at the bottom that meets the leader stalk.
  */
 export function create3DTrackBadgeCanvas({
   label = 'TARGET LOCATION',
   sublabel = '',
   latitude = 0,
   longitude = 0,
-  height = 0,
   color = '#f59e0b',
 }) {
+  const title = String(label).toUpperCase();
+  const coords = formatCoords(latitude, longitude);
+
+  const titleFont = '800 30px "Outfit", "Inter", sans-serif';
+  const subFont = '500 15px "Inter", sans-serif';
+  const coordFont = '600 12px "JetBrains Mono", ui-monospace, monospace';
+
+  // Measure text to size the card to its content
+  const measure = document.createElement('canvas').getContext('2d');
+  const textWidth = (font, text, spacing = 0) => {
+    measure.font = font;
+    return measure.measureText(text).width + spacing * text.length;
+  };
+
+  const pad = 20;
+  const iconSize = 44;
+  const gap = 16;
+  const shadow = 24;
+  const notch = 12;
+  const contentW = Math.max(
+    textWidth(titleFont, title, 1.5),
+    sublabel ? textWidth(subFont, sublabel) : 0,
+    textWidth(coordFont, coords, 0.5)
+  );
+  const cardW = Math.min(560, Math.max(280, Math.ceil(pad + iconSize + gap + contentW + pad)));
+  const cardH = sublabel ? 104 : 84;
+  const logicalW = cardW + shadow * 2;
+  const logicalH = cardH + notch + shadow * 2;
+
   const canvas = document.createElement('canvas');
-  canvas.width = 540;
-  canvas.height = 200;
+  canvas.width = logicalW * BADGE_PIXEL_RATIO;
+  canvas.height = logicalH * BADGE_PIXEL_RATIO;
   const ctx = canvas.getContext('2d');
+  ctx.scale(BADGE_PIXEL_RATIO, BADGE_PIXEL_RATIO);
 
-  const x = 16;
-  const y = 14;
-  const w = 508;
-  const h = 156;
-  const r = 12;
+  const x = shadow;
+  const y = shadow;
+  const r = 18;
 
-  // Ambient Drop Shadow
+  // Card body + notch as one shape so the shadow and fill are seamless
+  const cardPath = new Path2D();
+  cardPath.roundRect(x, y, cardW, cardH, r);
+  const midX = x + cardW / 2;
+  cardPath.moveTo(midX - notch, y + cardH - 1);
+  cardPath.lineTo(midX, y + cardH + notch);
+  cardPath.lineTo(midX + notch, y + cardH - 1);
+  cardPath.closePath();
+
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-  ctx.shadowBlur = 20;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+  ctx.shadowBlur = 22;
   ctx.shadowOffsetY = 8;
-
-  // Glassmorphic Panel Backing
-  ctx.fillStyle = 'rgba(7, 11, 20, 0.90)';
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
-  ctx.fill();
+  const bg = ctx.createLinearGradient(0, y, 0, y + cardH);
+  bg.addColorStop(0, 'rgba(22, 28, 42, 0.94)');
+  bg.addColorStop(1, 'rgba(8, 11, 20, 0.94)');
+  ctx.fillStyle = bg;
+  ctx.fill(cardPath);
   ctx.restore();
 
-  // Glowing Neon Border
+  // Hairline border tinted with the accent color
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.8;
+  ctx.globalAlpha = 0.65;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
+  ctx.roundRect(x + 0.75, y + 0.75, cardW - 1.5, cardH - 1.5, r - 1);
   ctx.stroke();
+  ctx.globalAlpha = 1;
 
-  // Sci-fi / After Effects HUD Corner Brackets ⌜ ⌝ ⌞ ⌟
-  const bLen = 16;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2.5;
-
-  // Top-Left
-  ctx.beginPath();
-  ctx.moveTo(x - 2, y + bLen);
-  ctx.lineTo(x - 2, y - 2);
-  ctx.lineTo(x + bLen, y - 2);
-  ctx.stroke();
-
-  // Top-Right
-  ctx.beginPath();
-  ctx.moveTo(x + w + 2 - bLen, y - 2);
-  ctx.lineTo(x + w + 2, y - 2);
-  ctx.lineTo(x + w + 2, y + bLen);
-  ctx.stroke();
-
-  // Bottom-Left
-  ctx.beginPath();
-  ctx.moveTo(x - 2, y + h - bLen);
-  ctx.lineTo(x - 2, y + h + 2);
-  ctx.lineTo(x + bLen, y + h + 2);
-  ctx.stroke();
-
-  // Bottom-Right
-  ctx.beginPath();
-  ctx.moveTo(x + w + 2 - bLen, y + h + 2);
-  ctx.lineTo(x + w + 2, y + h + 2);
-  ctx.lineTo(x + w + 2, y + h - bLen);
-  ctx.stroke();
-
-  // Header Row: Status Indicator & GPS Lock
-  ctx.fillStyle = '#10b981';
-  ctx.beginPath();
-  ctx.arc(x + 24, y + 25, 4.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#64748b';
-  ctx.font = '700 11px "Inter", monospace';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('TRACK 01 // 3D CAMERA LOCK', x + 36, y + 25);
-
-  // Target Reticle Icon on Right
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.4;
-  const rx = x + w - 28;
-  const ry = y + 25;
-  ctx.beginPath();
-  ctx.arc(rx, ry, 8, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(rx - 12, ry);
-  ctx.lineTo(rx + 12, ry);
-  ctx.moveTo(rx, ry - 12);
-  ctx.lineTo(rx, ry + 12);
-  ctx.stroke();
-
-  // Main Headline: Location / City Name
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '800 24px "Outfit", "Inter", sans-serif';
-  ctx.textBaseline = 'top';
-  const cleanTitle = String(label).toUpperCase();
-  ctx.fillText(cleanTitle, x + 24, y + 44, w - 48);
-
-  // Subtitle / Region
-  const latStr = `${Math.abs(latitude).toFixed(4)}° ${latitude >= 0 ? 'N' : 'S'}`;
-  const lonStr = `${Math.abs(longitude).toFixed(4)}° ${longitude >= 0 ? 'E' : 'W'}`;
-  const sub = sublabel || `${latStr}, ${lonStr}`;
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '500 13px "Inter", sans-serif';
-  ctx.fillText(sub, x + 24, y + 80, w - 48);
-
-  // Divider Line
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x + 20, y + 106);
-  ctx.lineTo(x + w - 20, y + 106);
-  ctx.stroke();
-
-  // Telemetry Footer: Lat/Lon & Elevation
-  ctx.fillStyle = color;
-  ctx.font = '600 12px "Inter", monospace';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`GEO: ${latStr}  ${lonStr}`, x + 24, y + 130);
-
-  const elevText = `ALT: ${Math.round(height || 0)}M`;
-  ctx.fillStyle = '#cbd5e1';
-  ctx.font = '600 12px "Inter", monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(elevText, x + w - 24, y + 130);
-  ctx.textAlign = 'left';
-
-  // Bottom Anchor Pointer notch (connects directly to vertical leader stalk)
+  // Pointer notch in solid accent color
   ctx.fillStyle = color;
   ctx.beginPath();
-  const midX = x + w / 2;
-  const botY = y + h;
-  ctx.moveTo(midX - 10, botY);
-  ctx.lineTo(midX + 10, botY);
-  ctx.lineTo(midX, botY + 12);
+  ctx.moveTo(midX - notch + 2, y + cardH);
+  ctx.lineTo(midX, y + cardH + notch);
+  ctx.lineTo(midX + notch - 2, y + cardH);
   ctx.closePath();
   ctx.fill();
 
+  // Accent icon disc with a map-pin glyph
+  const iconX = x + pad;
+  const iconY = y + (cardH - iconSize) / 2;
+  const cx = iconX + iconSize / 2;
+  const cy = iconY + iconSize / 2;
+  const disc = ctx.createRadialGradient(cx - 6, cy - 8, 2, cx, cy, iconSize / 2);
+  disc.addColorStop(0, '#ffffff33');
+  disc.addColorStop(1, color);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, iconSize / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = disc;
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy - 4, 9, Math.PI, 0);
+  ctx.bezierCurveTo(cx + 9, cy + 3, cx + 3, cy + 8, cx, cy + 13);
+  ctx.bezierCurveTo(cx - 3, cy + 8, cx - 9, cy + 3, cx - 9, cy - 4);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 4, 3.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Text block
+  const textX = iconX + iconSize + gap;
+  const maxTextW = cardW - (textX - x) - pad;
+  ctx.textBaseline = 'alphabetic';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = titleFont;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '1.5px';
+  ctx.fillText(title, textX, y + (sublabel ? 44 : 46), maxTextW);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+
+  if (sublabel) {
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = subFont;
+    ctx.fillText(sublabel, textX, y + 68, maxTextW);
+  }
+
+  ctx.fillStyle = color;
+  ctx.font = coordFont;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.5px';
+  ctx.fillText(coords, textX, y + (sublabel ? 90 : 68), maxTextW);
+
+  // Logical anchor geometry so the billboard can line the notch tip up with the stalk
+  canvas.badgeTipOffsetY = shadow; // transparent shadow margin below the notch tip, in logical px
   return canvas;
 }
 
@@ -177,6 +184,15 @@ export class OverlayManager {
   sync(scene) {
     if (!this.viewer || this.viewer.isDestroyed()) return;
     this.clear();
+    this.lastScene = scene;
+
+    // Badges are drawn to canvas once; redraw them when the web fonts finish loading
+    if (!this.fontsReady) {
+      this.fontsReady = true;
+      loadBadgeFonts().then(() => {
+        if (this.lastScene && !this.viewer.isDestroyed()) this.sync(this.lastScene);
+      });
+    }
 
     const overlays = scene.overlays || [];
     for (const item of overlays) {
@@ -255,7 +271,6 @@ export class OverlayManager {
       sublabel,
       latitude: lat,
       longitude: lon,
-      height: groundAlt,
       color,
     });
 
@@ -265,9 +280,11 @@ export class OverlayManager {
       billboard: {
         image: badgeCanvas,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        scale: 0.62,
+        // Drop the transparent shadow margin so the notch tip sits on the stalk top
+        pixelOffset: new Cesium.Cartesian2(0, badgeCanvas.badgeTipOffsetY),
+        scale: 1 / BADGE_PIXEL_RATIO,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        scaleByDistance: new Cesium.NearFarScalar(500, 0.75, 12000000, 0.35),
+        scaleByDistance: new Cesium.NearFarScalar(1000, 1.0, 20000000, 0.8),
       },
     });
     this.entities.push(badgeEntity);

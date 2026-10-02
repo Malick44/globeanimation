@@ -42,7 +42,7 @@ export function interpolateHeight(fromH, toH, t) {
 /**
  * Sample camera pose at progress t (0 to 1) for two points
  */
-export function sampleTwoPointCamera(start, end, progress, easingKey = 'cubicInOut') {
+export function sampleTwoPointCamera(start, end, progress, easingKey = 'cubicInOut', lookAt = null) {
   const tRaw = Math.max(0, Math.min(1, Number(progress) || 0));
   const easeFn = EASING_FUNCTIONS[easingKey] || EASING_FUNCTIONS.cubicInOut;
   const t = easeFn(tRaw);
@@ -58,6 +58,24 @@ export function sampleTwoPointCamera(start, end, progress, easingKey = 'cubicInO
   const pitchProgress = startPitch < -65 ? Math.pow(t, 2.6) : t;
   const pitch = startPitch + (endPitch - startPitch) * pitchProgress;
   const roll = interpolateAngle(start.roll || 0, end.roll || 0, t);
+
+  // Keep a fixed point of interest (e.g. the destination pin) centered: derive the camera ground position
+  // from the interpolated height/heading/pitch instead of lerping lat/lon independently of the tilt
+  if (lookAt) {
+    const pitchRad = Math.abs(pitch) * (Math.PI / 180);
+    const headingRad = heading * (Math.PI / 180);
+    const groundDist = Math.max(0, height - (lookAt.height || 0)) / Math.max(0.1, Math.tan(pitchRad));
+    const latOffset = (groundDist * Math.cos(headingRad)) / 111139;
+    const lonOffset = (groundDist * Math.sin(headingRad)) / (111139 * Math.cos(lookAt.latitude * (Math.PI / 180)));
+    return {
+      longitude: lookAt.longitude - lonOffset,
+      latitude: lookAt.latitude - latOffset,
+      height,
+      heading,
+      pitch,
+      roll,
+    };
+  }
 
   return {
     longitude: lon,

@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
+import { createServer } from 'vite';
 
 import { execSync } from 'child_process';
 
@@ -36,7 +37,41 @@ console.log(`💾 Target Output: ${outputPath}`);
 console.log(`🌐 Server URL: ${serverUrl}`);
 console.log('----------------------------------------------------');
 
+async function isReachable(url) {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(3000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Start the Vite dev server in-process if nothing is listening at a local serverUrl
+async function ensureServer(url) {
+  if (await isReachable(url)) return null;
+  const { hostname, port } = new URL(url);
+  if (!['localhost', '127.0.0.1'].includes(hostname) || hasFlag('--no-server')) {
+    throw new Error(`GlobeLocation Studio is not reachable at ${url}. Start it with "npm run dev" or pass --url.`);
+  }
+  console.log('🛠️  No dev server detected — starting Vite...');
+  const server = await createServer({ server: { port: Number(port) || 5173, strictPort: true } });
+  await server.listen();
+  console.log(`✅ Vite dev server running at ${url}`);
+  return server;
+}
+
 async function run() {
+  const viteServer = await ensureServer(serverUrl);
+  let browser;
+  try {
+    await runAgent((b) => (browser = b));
+  } finally {
+    await browser?.close().catch(() => {});
+    await viteServer?.close();
+  }
+}
+
+async function runAgent(onBrowser) {
   const outputDir = path.dirname(path.resolve(outputPath));
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -47,6 +82,7 @@ async function run() {
     headless: true,
     args: ['--no-sandbox'],
   });
+  onBrowser(browser);
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
@@ -132,7 +168,6 @@ async function run() {
     console.log('✅ Scene successfully synthesized and loaded in Studio!');
   }
 
-  await browser.close();
   console.log('🎬 Autonomous Video Agent task complete!');
 }
 

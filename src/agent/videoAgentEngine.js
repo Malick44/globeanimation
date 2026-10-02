@@ -245,7 +245,7 @@ export class VideoAgentEngine {
       const videoFormat = options.videoFormat || (parsedIntent.preferWebm ? 'webm' : 'mp4');
       onProgress({
         step: 'rendering',
-        message: `Auto-rendering 60FPS ${videoFormat.toUpperCase()} video clip with compositing...`,
+        message: `Auto-rendering ${this.store.scene.format.fps || 30}FPS ${videoFormat.toUpperCase()} video clip with compositing...`,
         progress: 0.9,
       });
 
@@ -358,6 +358,8 @@ export class VideoAgentEngine {
     // 6. Landing Frame Photo
     let includeGroundPhoto =
       text.includes('photo') ||
+      text.includes('image') ||
+      text.includes('picture') ||
       text.includes('street') ||
       text.includes('ground') ||
       text.includes('real location') ||
@@ -475,6 +477,7 @@ export class VideoAgentEngine {
     const targetAlt = loc.height || 450;
     const heading = loc.heading || 25;
     const pitch = loc.pitch || -34;
+    const stalkHeight = Math.max(260, targetAlt * 0.7);
 
     // Build camera poses
     let cameraConfig;
@@ -488,19 +491,27 @@ export class VideoAgentEngine {
         waypoints: [],
       };
     } else {
-      // Globe to Place / Dive
-      const lookAtEnd = computeCameraPositionLookingAt(loc.latitude, loc.longitude, targetAlt, heading, pitch);
+      // Globe to Place / Dive — finish far enough back that the whole pin (beacon, stalk & badge) fits in frame
+      const lookAtEnd = computeCameraPositionLookingAt(loc.latitude, loc.longitude, Math.max(targetAlt, stalkHeight * 2.4), heading, pitch);
+      // Start straight above the destination so it (and its pin) is centered from the very first frame,
+      // then tilt into the oblique skyline shot as we descend
       cameraConfig = {
         start: {
-          latitude: loc.latitude + 6.5,
-          longitude: loc.longitude - 12.0,
-          height: 1400000, // 1400km space orbit
-          heading: 10,
-          pitch: -65,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          height: 6500000, // 6500km orbital view of the globe
+          heading,
+          pitch: -89,
           roll: 0,
         },
         end: lookAtEnd,
         easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        // Aim at the middle of the pin stalk so both the ground beacon and the HUD badge stay in frame
+        lookAt: {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          height: stalkHeight * 0.5,
+        },
         waypoints: [],
       };
     }
@@ -516,7 +527,6 @@ export class VideoAgentEngine {
 
     // 3D Overlays (HUD Pin)
     const pinColor = intent.pinColor || loc.pinColor || '#f59e0b';
-    const stalkHeight = Math.max(260, targetAlt * 0.7);
     const overlays = [
       {
         id: 'pin-' + Date.now(),

@@ -129,7 +129,8 @@ export class GlobeEngine {
         cameraConfig.start,
         cameraConfig.end,
         progress,
-        cameraConfig.easing
+        cameraConfig.easing,
+        cameraConfig.lookAt
       );
     }
 

@@ -3,29 +3,20 @@
  * Composites 3D Cesium WebGL canvas with real location landing photography,
  * animated typography, titles, and attribution
  */
-import { ambience } from '../audio/ambience.js';
-
-export function getSupportedMimeType(preferred = 'mp4') {
-  const mp4Types = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=avc1',
-    'video/mp4',
-  ];
-  const webmTypes = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
-
-  const types = preferred === 'webm' ? [...webmTypes, ...mp4Types] : [...mp4Types, ...webmTypes];
-
-  for (const type of types) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-      return type;
-    }
-  }
-  return 'video/mp4';
-}
+import {
+  Output,
+  BufferTarget,
+  Mp4OutputFormat,
+  WebMOutputFormat,
+  CanvasSource,
+  AudioBufferSource,
+  QUALITY_HIGH,
+  QUALITY_VERY_HIGH,
+  getFirstEncodableVideoCodec,
+  getFirstEncodableAudioCodec,
+} from 'mediabunny';
+import { renderAmbienceOffline } from '../audio/ambience.js';
+import { loadBadgeFonts } from '../cesium/overlays.js';
 
 /**
  * Render Ground Photo Transition on 2D Composite Canvas
@@ -172,38 +163,50 @@ export function drawOverlaysOnCanvas(ctx, scene, currentTime, width, height) {
         const baseScale = isVertical ? 0.85 : 1.0;
 
         if (position === 'lower-third') {
-          const cardX = width * 0.08;
-          const cardY = height * 0.78;
-          const cardW = Math.min(width * 0.84, 760 * baseScale);
-          const cardH = 110 * baseScale;
+          const titleSize = Math.round(42 * baseScale);
+          const subSize = Math.round(22 * baseScale);
+          const padX = 34 * baseScale;
+          const cardX = width * 0.06;
+          const cardH = (subtext ? 132 : 92) * baseScale;
+          const cardY = height * 0.94 - cardH;
+
+          // Size the card to its text
+          ctx.font = `800 ${titleSize}px "Outfit", sans-serif`;
+          const titleW = ctx.measureText(titleText).width;
+          ctx.font = `500 ${subSize}px "Inter", sans-serif`;
+          const subW = subtext ? ctx.measureText(subtext).width : 0;
+          const cardW = Math.min(width * 0.88, Math.max(titleW, subW) + padX * 2);
 
           // Glassmorphic card backing
-          ctx.fillStyle = 'rgba(7, 10, 16, 0.75)';
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          const bg = ctx.createLinearGradient(0, cardY, 0, cardY + cardH);
+          bg.addColorStop(0, 'rgba(22, 28, 42, 0.88)');
+          bg.addColorStop(1, 'rgba(8, 11, 20, 0.88)');
+          ctx.fillStyle = bg;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
           ctx.lineWidth = 1.5;
 
           ctx.beginPath();
-          ctx.roundRect(cardX, cardY, cardW, cardH, 16);
+          ctx.roundRect(cardX, cardY, cardW, cardH, 18);
           ctx.fill();
           ctx.stroke();
 
           // Left amber accent strip
           ctx.fillStyle = '#f59e0b';
           ctx.beginPath();
-          ctx.roundRect(cardX, cardY, 6, cardH, [16, 0, 0, 16]);
+          ctx.roundRect(cardX, cardY, 7, cardH, [18, 0, 0, 18]);
           ctx.fill();
 
           // Main Title
           ctx.fillStyle = '#ffffff';
-          ctx.font = `700 ${Math.round(28 * baseScale)}px "Outfit", sans-serif`;
+          ctx.font = `800 ${titleSize}px "Outfit", sans-serif`;
           ctx.textBaseline = 'top';
-          ctx.fillText(titleText, cardX + 26 * baseScale, cardY + 22 * baseScale);
+          ctx.fillText(titleText, cardX + padX, cardY + 24 * baseScale, cardW - padX * 1.5);
 
           // Subtext
           if (subtext) {
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = `500 ${Math.round(16 * baseScale)}px "Inter", sans-serif`;
-            ctx.fillText(subtext, cardX + 26 * baseScale, cardY + 62 * baseScale);
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = `500 ${subSize}px "Inter", sans-serif`;
+            ctx.fillText(subtext, cardX + padX, cardY + 82 * baseScale, cardW - padX * 1.5);
           }
         } else if (position === 'top-banner') {
           const cardW = Math.min(width * 0.86, 680 * baseScale);
@@ -312,14 +315,57 @@ export function captureSnapshot(globeEngine, scene, filename = 'location-snapsho
 }
 
 /**
- * Render and Record Video with Real-Time Frame Interpolation
+ * Wait until Cesium has streamed every imagery/terrain tile for the current camera pose,
+ * so frames never show low-res tiles popping in. Capped so a stalled tile server cannot hang the export.
+ */
+async function settleTiles(viewer, maxWaitMs = 8000) {
+  const scene = viewer.scene;
+  const isSettled = () => scene.globe.tilesLoaded && viewer.dataSourceDisplay.ready;
+  const deadline = performance.now() + maxWaitMs;
+
+  // Tile selection for a new camera pose only happens during render, so a single render can report
+  // stale "loaded" state; require the globe to stay settled across consecutive renders
+  let stableRenders = 0;
+  while (stableRenders < 3) {
+    viewer.scene.render();
+    stableRenders = isSettled() ? stableRenders + 1 : 0;
+    if (performance.now() > deadline) {
+      console.warn("Tile streaming timed out; rendering frame with tiles loaded so far");
+      return false;
+    }
+    if (stableRenders < 3) await new Promise((r) => setTimeout(r, 16));
+  }
+  return true;
+}
+
+/**
+ * Pick the first codec pair this browser can actually encode for the requested container
+ */
+async function chooseCodecs(container, width, height, fps) {
+  const videoCandidates = container === 'webm' ? ['vp9', 'vp8', 'av1'] : ['avc', 'hevc', 'av1', 'vp9'];
+  const audioCandidates = container === 'webm' ? ['opus'] : ['aac', 'opus'];
+  const videoCodec = await getFirstEncodableVideoCodec(videoCandidates, { width, height, frameRate: fps, quality: QUALITY_VERY_HIGH });
+  const audioCodec = await getFirstEncodableAudioCodec(audioCandidates, { numberOfChannels: 2, sampleRate: 48000 });
+  return { videoCodec, audioCodec };
+}
+
+/**
+ * Render and encode video deterministically, frame by frame.
+ *
+ * Each frame is rendered offline (waiting for tiles to finish loading) and handed to WebCodecs with an exact
+ * timestamp of frame / fps, so playback is perfectly smooth and the clip length always matches the scene duration
+ * no matter how slowly individual frames render (e.g. in headless/software GL).
  */
 export async function exportVideo(globeEngine, scene, options = {}, onProgress = () => {}) {
   const viewer = globeEngine?.viewer;
   if (!viewer) throw new Error('Globe engine not available');
+  if (typeof VideoEncoder === 'undefined') {
+    throw new Error('Video export requires WebCodecs (VideoEncoder), which this browser does not support');
+  }
 
-  const width = scene.format.width || 1920;
-  const height = scene.format.height || 1080;
+  // Encoders require even dimensions
+  const width = Math.round((scene.format.width || 1920) / 2) * 2;
+  const height = Math.round((scene.format.height || 1080) / 2) * 2;
   const fps = scene.format.fps || 30;
   const durationSeconds = scene.format.durationSeconds || 8;
   const totalFrames = Math.round(durationSeconds * fps);
@@ -351,70 +397,77 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
   canvas.height = height;
   const ctx = canvas.getContext('2d', { alpha: false });
 
-  // Stream setup
-  const stream = canvas.captureStream(fps);
+  const container = (options.format || options.videoFormat || 'mp4') === 'webm' ? 'webm' : 'mp4';
+  const { videoCodec, audioCodec } = await chooseCodecs(container, width, height, fps);
+  if (!videoCodec) throw new Error(`No ${container.toUpperCase()} video encoder available in this browser`);
 
-  // Audio setup
-  let audioTrack = null;
-  if (scene.audio?.enabled) {
+  const output = new Output({
+    format: container === 'webm' ? new WebMOutputFormat() : new Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target: new BufferTarget(),
+  });
+
+  const videoSource = new CanvasSource(canvas, {
+    codec: videoCodec,
+    bitrate: QUALITY_HIGH,
+    keyFrameInterval: 1,
+  });
+  output.addVideoTrack(videoSource, { frameRate: fps });
+
+  let audioSource = null;
+  if (scene.audio?.enabled && audioCodec) {
+    audioSource = new AudioBufferSource({ codec: audioCodec, bitrate: 192000 });
+    output.addAudioTrack(audioSource);
+  }
+
+  await output.start();
+
+  // Audio is synthesized offline to exactly the clip length, so it stays in sync with the frame-accurate video
+  if (audioSource) {
     try {
-      ambience.start(scene.audio.volume || 0.6);
-      if (scene.template === 'globe-to-place' || (scene.camera?.start?.height || 0) > 50000) {
-        ambience.triggerWhoosh(Math.min(5, durationSeconds * 0.65));
-      }
-      audioTrack = ambience.getAudioTrack();
-      if (audioTrack) {
-        stream.addTrack(audioTrack);
-      }
+      const isDive = scene.template === 'globe-to-place' || (scene.camera?.start?.height || 0) > 50000;
+      const audioBuffer = await renderAmbienceOffline({
+        durationSeconds,
+        volume: scene.audio.volume || 0.6,
+        whooshDuration: isDive ? Math.min(5, durationSeconds * 0.65) : 0,
+      });
+      await audioSource.add(audioBuffer);
     } catch (e) {
       console.warn('Audio synthesis disabled for recording:', e);
     }
+    audioSource.close();
   }
 
-  const preferredFormat = options.format || options.videoFormat || 'mp4';
-  const mimeType = getSupportedMimeType(preferredFormat);
-  const mediaRecorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: 16000000, // High quality 16 Mbps
-  });
-
-  const recordedChunks = [];
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) {
-      recordedChunks.push(e.data);
-    }
-  };
-
-  const recordingPromise = new Promise((resolve, reject) => {
-    mediaRecorder.onstop = () => {
-      if (audioTrack) {
-        ambience.stop();
-      }
-      const blob = new Blob(recordedChunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      resolve({ blob, url, mimeType, size: blob.size });
-    };
-    mediaRecorder.onerror = (e) => {
-      if (audioTrack) ambience.stop();
-      reject(e.error || new Error('MediaRecorder error'));
-    };
-  });
-
-  mediaRecorder.start();
-
   const sourceCanvas = globeEngine.getCanvas();
-  const frameIntervalMs = 1000 / fps;
+
+  // Freeze the Cesium clock so sun lighting doesn't drift while slow frames render
+  const wasAnimating = viewer.clock.shouldAnimate;
+  viewer.clock.shouldAnimate = false;
+
+  // Render the globe at (at least) the export resolution so the frame and pin badges aren't upscaled
+  const prevResolutionScale = viewer.resolutionScale;
+  if (sourceCanvas?.width && sourceCanvas?.height) {
+    const coverScale = Math.max(width / sourceCanvas.width, height / sourceCanvas.height);
+    if (coverScale > 1) viewer.resolutionScale = prevResolutionScale * coverScale;
+  }
 
   try {
-    for (let frame = 0; frame <= totalFrames; frame++) {
-      const progress = frame / totalFrames;
-      const currentTime = progress * durationSeconds;
+    // Redraw pin badges with their web fonts loaded, then warm up on the opening pose so the first frame
+    // already has its tiles and the badge texture uploaded
+    await loadBadgeFonts();
+    globeEngine.overlayManager?.sync(scene);
+    globeEngine.seek(scene, 0);
+    await settleTiles(viewer);
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => requestAnimationFrame(r));
+    }
 
-      // Update camera pose
+    for (let frame = 0; frame < totalFrames; frame++) {
+      const progress = totalFrames > 1 ? frame / (totalFrames - 1) : 1;
+      const currentTime = frame / fps;
+
+      // Update camera pose and render once every tile for this pose has arrived
       globeEngine.seek(scene, progress);
-
-      // Force synchronous Cesium frame render
-      viewer.scene.render();
+      await settleTiles(viewer);
 
       // Clear composite canvas
       ctx.fillStyle = '#05070a';
@@ -453,31 +506,36 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
       // Draw custom motion graphics & title overlays
       drawOverlaysOnCanvas(ctx, scene, currentTime, width, height);
 
-      // Notify progress callback
-      const percent = Math.min(100, Math.round((frame / totalFrames) * 100));
-      onProgress({ percent, frame, totalFrames, currentTime });
+      // Encode with an exact, evenly spaced timestamp
+      await videoSource.add(currentTime, 1 / fps);
 
-      // Small delay to allow MediaRecorder frame capture
-      await new Promise((r) => setTimeout(r, frameIntervalMs * 0.4));
+      const done = frame + 1;
+      onProgress({ percent: Math.round((done / totalFrames) * 100), frame: done, totalFrames, currentTime });
     }
 
-    // Finish recording
-    mediaRecorder.stop();
-    const result = await recordingPromise;
-
-    // Trigger automatic download
-    const safeName = (scene.name || 'location-video').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-    const a = document.createElement('a');
-    a.href = result.url;
-    a.download = `${safeName}-${Date.now()}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    return result;
+    videoSource.close();
+    await output.finalize();
   } catch (err) {
-    mediaRecorder.stop();
+    await output.cancel().catch(() => {});
     throw err;
+  } finally {
+    viewer.clock.shouldAnimate = wasAnimating;
+    viewer.resolutionScale = prevResolutionScale;
   }
+
+  const mimeType = await output.getMimeType();
+  const blob = new Blob([output.target.buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const result = { blob, url, mimeType, size: blob.size };
+
+  // Trigger automatic download
+  const safeName = (scene.name || 'location-video').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeName}-${Date.now()}.${container}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  return result;
 }

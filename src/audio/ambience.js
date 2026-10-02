@@ -3,6 +3,94 @@
  * Generates rich, license-free atmospheric drone and spatial whoosh for exported videos
  */
 
+/**
+ * Build the warm low-passed drone (D1 + A1) feeding `output`
+ */
+function buildDrone(ctx, output) {
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(140, ctx.currentTime);
+  filter.Q.setValueAtTime(3, ctx.currentTime);
+  filter.connect(output);
+
+  // Sub oscillator 1 (Root D1 ~ 36.7Hz)
+  const osc1 = ctx.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(36.7, ctx.currentTime);
+  osc1.connect(filter);
+  osc1.start();
+
+  // Harmonic oscillator 2 (Fifth A1 ~ 55.0Hz)
+  const osc2 = ctx.createOscillator();
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(55.0, ctx.currentTime);
+  const osc2Gain = ctx.createGain();
+  osc2Gain.gain.setValueAtTime(0.4, ctx.currentTime);
+  osc2.connect(osc2Gain);
+  osc2Gain.connect(filter);
+  osc2.start();
+
+  return { filter, osc1, osc2 };
+}
+
+/**
+ * Schedule a band-passed noise whoosh into `output` starting at `now`
+ */
+function scheduleWhoosh(ctx, output, now, duration) {
+  const bufferSize = Math.floor(ctx.sampleRate * Math.min(6, duration));
+  const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+
+  const whiteNoise = ctx.createBufferSource();
+  whiteNoise.buffer = noiseBuffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 3.5;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.28, now + duration * 0.45);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  filter.frequency.setValueAtTime(180, now);
+  filter.frequency.exponentialRampToValueAtTime(1200, now + duration * 0.45);
+  filter.frequency.exponentialRampToValueAtTime(240, now + duration);
+
+  whiteNoise.connect(filter);
+  filter.connect(gain);
+  gain.connect(output);
+
+  whiteNoise.start(now);
+  whiteNoise.stop(now + duration + 0.2);
+}
+
+/**
+ * Render the ambience bed (+ optional whoosh) offline into an AudioBuffer of exactly `durationSeconds`,
+ * so exported audio is sample-accurate regardless of how long video frames take to render
+ */
+export async function renderAmbienceOffline({ durationSeconds, volume = 0.5, whooshDuration = 0, sampleRate = 48000 }) {
+  const length = Math.max(1, Math.ceil(durationSeconds * sampleRate));
+  const ctx = new OfflineAudioContext(2, length, sampleRate);
+
+  const master = ctx.createGain();
+  const level = Math.max(0.001, volume * 0.4);
+  const fadeOut = Math.min(0.8, durationSeconds * 0.2);
+  master.gain.setValueAtTime(0.001, 0);
+  master.gain.exponentialRampToValueAtTime(level, Math.min(1.2, durationSeconds * 0.5));
+  master.gain.setValueAtTime(level, durationSeconds - fadeOut);
+  master.gain.exponentialRampToValueAtTime(0.0001, durationSeconds);
+  master.connect(ctx.destination);
+
+  buildDrone(ctx, master);
+  if (whooshDuration > 0) scheduleWhoosh(ctx, master, 0, whooshDuration);
+
+  return ctx.startRendering();
+}
+
 class AmbienceSynthesizer {
   constructor() {
     this.ctx = null;
@@ -27,29 +115,10 @@ class AmbienceSynthesizer {
     this.masterGain.connect(this.ctx.destination);
     this.masterGain.connect(this.destination);
 
-    // Low-pass filter for warm cinematic drone
-    this.filter = this.ctx.createBiquadFilter();
-    this.filter.type = 'lowpass';
-    this.filter.frequency.setValueAtTime(140, this.ctx.currentTime);
-    this.filter.Q.setValueAtTime(3, this.ctx.currentTime);
-    this.filter.connect(this.masterGain);
-
-    // Sub oscillator 1 (Root D1 ~ 36.7Hz)
-    this.osc1 = this.ctx.createOscillator();
-    this.osc1.type = 'sine';
-    this.osc1.frequency.setValueAtTime(36.7, this.ctx.currentTime);
-    this.osc1.connect(this.filter);
-    this.osc1.start();
-
-    // Harmonic oscillator 2 (Fifth A1 ~ 55.0Hz)
-    this.osc2 = this.ctx.createOscillator();
-    this.osc2.type = 'triangle';
-    this.osc2.frequency.setValueAtTime(55.0, this.ctx.currentTime);
-    const osc2Gain = this.ctx.createGain();
-    osc2Gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-    this.osc2.connect(osc2Gain);
-    osc2Gain.connect(this.filter);
-    this.osc2.start();
+    const { filter, osc1, osc2 } = buildDrone(this.ctx, this.masterGain);
+    this.filter = filter;
+    this.osc1 = osc1;
+    this.osc2 = osc2;
   }
 
   start(volume = 0.5) {
@@ -81,36 +150,7 @@ class AmbienceSynthesizer {
   triggerWhoosh(duration = 4.0) {
     if (!this.ctx) this.init();
     try {
-      const bufferSize = Math.floor(this.ctx.sampleRate * Math.min(6, duration));
-      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
-
-      const whiteNoise = this.ctx.createBufferSource();
-      whiteNoise.buffer = noiseBuffer;
-
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.Q.value = 3.5;
-
-      const gain = this.ctx.createGain();
-      const now = this.ctx.currentTime;
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.28, now + duration * 0.45);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-      filter.frequency.setValueAtTime(180, now);
-      filter.frequency.exponentialRampToValueAtTime(1200, now + duration * 0.45);
-      filter.frequency.exponentialRampToValueAtTime(240, now + duration);
-
-      whiteNoise.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.masterGain);
-
-      whiteNoise.start(now);
-      whiteNoise.stop(now + duration + 0.2);
+      scheduleWhoosh(this.ctx, this.masterGain, this.ctx.currentTime, duration);
     } catch (e) {
       console.warn('Whoosh synthesis error:', e);
     }
