@@ -15,6 +15,7 @@ import {
   getFirstEncodableVideoCodec,
   getFirstEncodableAudioCodec,
 } from 'mediabunny';
+import * as Cesium from 'cesium';
 import { renderAmbienceOffline } from '../audio/ambience.js';
 import { loadBadgeFonts } from '../cesium/overlays.js';
 
@@ -339,6 +340,114 @@ async function settleTiles(viewer, maxWaitMs = 8000) {
 }
 
 /**
+ * Where a scene's tracked points land in the exported frame, for a caller that draws its own labels.
+ * `scene.track` is {points: {id: [lon, lat, height?]}, lines: {id: [[lon, lat, height?], ...]}}; each
+ * point comes back as [x, y, visible] in export pixels (x, y are null when it is behind the camera),
+ * using the same cover crop as the frame. visible is false behind the globe or off screen.
+ */
+function projectTrack(viewer, track, width, height) {
+  const sceneObj = viewer.scene;
+  const canvas = viewer.canvas;
+  const srcW = canvas.width;
+  const srcH = canvas.height;
+  const targetAspect = width / height;
+  let cropX = 0, cropY = 0, cropW = srcW, cropH = srcH;
+  if (srcW / srcH > targetAspect) {
+    cropW = srcH * targetAspect;
+    cropX = (srcW - cropW) / 2;
+  } else {
+    cropH = srcW / targetAspect;
+    cropY = (srcH - cropH) / 2;
+  }
+  const occluder = new Cesium.EllipsoidalOccluder(Cesium.Ellipsoid.WGS84, viewer.camera.positionWC);
+  const one = ([lon, lat, h = 0]) => {
+    const world = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+    const px = Cesium.SceneTransforms.worldToDrawingBufferCoordinates(sceneObj, world);
+    if (!px) return [null, null, false];
+    const x = ((px.x - cropX) * width) / cropW;
+    const y = ((px.y - cropY) * height) / cropH;
+    const onScreen = x >= 0 && x <= width && y >= 0 && y <= height;
+    return [Math.round(x * 10) / 10, Math.round(y * 10) / 10, onScreen && occluder.isPointVisible(world)];
+  };
+  const out = { points: {}, lines: {} };
+  for (const [id, p] of Object.entries(track.points || {})) out.points[id] = one(p);
+  for (const [id, pts] of Object.entries(track.lines || {})) out.lines[id] = pts.map(one);
+  return out;
+}
+
+/**
+ * Draw the current globe frame onto the export canvas, cropped to cover it
+ */
+function drawGlobe(ctx, sourceCanvas, width, height) {
+  ctx.fillStyle = '#05070a';
+  ctx.fillRect(0, 0, width, height);
+  if (!sourceCanvas) return;
+  const srcW = sourceCanvas.width;
+  const srcH = sourceCanvas.height;
+  const targetAspect = width / height;
+  if (srcW / srcH > targetAspect) {
+    const cropW = srcH * targetAspect;
+    ctx.drawImage(sourceCanvas, (srcW - cropW) / 2, 0, cropW, srcH, 0, 0, width, height);
+  } else {
+    const cropH = srcW / targetAspect;
+    ctx.drawImage(sourceCanvas, 0, (srcH - cropH) / 2, srcW, cropH, 0, 0, width, height);
+  }
+}
+
+/**
+ * Render the globe at (at least) the export resolution; returns a function that restores the viewer
+ */
+function prepareViewer(viewer, sourceCanvas, width, height) {
+  const wasAnimating = viewer.clock.shouldAnimate;
+  const prevResolutionScale = viewer.resolutionScale;
+  // Freeze the Cesium clock so sun lighting doesn't drift while slow frames render
+  viewer.clock.shouldAnimate = false;
+  if (sourceCanvas?.width && sourceCanvas?.height) {
+    const coverScale = Math.max(width / sourceCanvas.width, height / sourceCanvas.height);
+    if (coverScale > 1) viewer.resolutionScale = prevResolutionScale * coverScale;
+  }
+  return () => {
+    viewer.clock.shouldAnimate = wasAnimating;
+    viewer.resolutionScale = prevResolutionScale;
+  };
+}
+
+/**
+ * PNG stills (data URLs) of the scene at the given progress fractions, rendered exactly as the export
+ * renders its frames: for previewing a camera move without encoding the whole clip
+ */
+export async function renderStills(globeEngine, scene, fractions) {
+  const viewer = globeEngine?.viewer;
+  if (!viewer) throw new Error('Globe engine not available');
+  const width = Math.round((scene.format.width || 1920) / 2) * 2;
+  const height = Math.round((scene.format.height || 1080) / 2) * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const sourceCanvas = globeEngine.getCanvas();
+  const restore = prepareViewer(viewer, sourceCanvas, width, height);
+  const stills = [];
+  try {
+    for (const f of fractions) {
+      globeEngine.seek(scene, f);
+      const settled = await settleTiles(viewer);
+      drawGlobe(ctx, sourceCanvas, width, height);
+      if (!scene.cleanPlate) drawOverlaysOnCanvas(ctx, scene, f * (scene.format.durationSeconds || 8), width, height);
+      stills.push({
+        progress: f,
+        settled,
+        png: canvas.toDataURL('image/png'),
+        track: scene.track ? projectTrack(viewer, scene.track, width, height) : null,
+      });
+    }
+  } finally {
+    restore();
+  }
+  return stills;
+}
+
+/**
  * Pick the first codec pair this browser can actually encode for the requested container
  */
 async function chooseCodecs(container, width, height, fps) {
@@ -370,9 +479,9 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
   const durationSeconds = scene.format.durationSeconds || 8;
   const totalFrames = Math.round(durationSeconds * fps);
 
-  // Preload real ground photo if enabled
+  // Preload real ground photo if enabled (never on a clean plate: it is the globe alone)
   let groundImg = null;
-  if (scene.groundPhoto?.enabled && scene.groundPhoto?.url) {
+  if (!scene.cleanPlate && scene.groundPhoto?.enabled && scene.groundPhoto?.url) {
     try {
       groundImg = new Image();
       groundImg.crossOrigin = 'anonymous';
@@ -439,22 +548,16 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
 
   const sourceCanvas = globeEngine.getCanvas();
 
-  // Freeze the Cesium clock so sun lighting doesn't drift while slow frames render
-  const wasAnimating = viewer.clock.shouldAnimate;
-  viewer.clock.shouldAnimate = false;
-
   // Render the globe at (at least) the export resolution so the frame and pin badges aren't upscaled
-  const prevResolutionScale = viewer.resolutionScale;
-  if (sourceCanvas?.width && sourceCanvas?.height) {
-    const coverScale = Math.max(width / sourceCanvas.width, height / sourceCanvas.height);
-    if (coverScale > 1) viewer.resolutionScale = prevResolutionScale * coverScale;
-  }
+  const restoreViewer = prepareViewer(viewer, sourceCanvas, width, height);
+  const trackFrames = [];
+  let stalledFrames = 0;
 
   try {
     // Redraw pin badges with their web fonts loaded, then warm up on the opening pose so the first frame
     // already has its tiles and the badge texture uploaded
     await loadBadgeFonts();
-    globeEngine.overlayManager?.sync(scene);
+    if (!scene.cleanPlate) globeEngine.overlayManager?.sync(scene);
     globeEngine.seek(scene, 0);
     await settleTiles(viewer);
     for (let i = 0; i < 20; i++) {
@@ -467,31 +570,11 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
 
       // Update camera pose and render once every tile for this pose has arrived
       globeEngine.seek(scene, progress);
-      await settleTiles(viewer);
-
-      // Clear composite canvas
-      ctx.fillStyle = '#05070a';
-      ctx.fillRect(0, 0, width, height);
+      if (!(await settleTiles(viewer))) stalledFrames++;
+      if (scene.track) trackFrames.push(projectTrack(viewer, scene.track, width, height));
 
       // Draw Cesium WebGL canvas onto 2D canvas with cover aspect ratio
-      if (sourceCanvas) {
-        const srcW = sourceCanvas.width;
-        const srcH = sourceCanvas.height;
-        const targetAspect = width / height;
-        const srcAspect = srcW / srcH;
-
-        if (srcAspect > targetAspect) {
-          // Source is wider, crop sides
-          const cropW = srcH * targetAspect;
-          const cropX = (srcW - cropW) / 2;
-          ctx.drawImage(sourceCanvas, cropX, 0, cropW, srcH, 0, 0, width, height);
-        } else {
-          // Source is taller, crop top/bottom
-          const cropH = srcW / targetAspect;
-          const cropY = (srcH - cropH) / 2;
-          ctx.drawImage(sourceCanvas, 0, cropY, srcW, cropH, 0, 0, width, height);
-        }
-      }
+      drawGlobe(ctx, sourceCanvas, width, height);
 
       // Draw Real Location Ground Photo Transition if within transition window
       if (groundImg && scene.groundPhoto?.enabled) {
@@ -503,8 +586,8 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
         }
       }
 
-      // Draw custom motion graphics & title overlays
-      drawOverlaysOnCanvas(ctx, scene, currentTime, width, height);
+      // Draw custom motion graphics & title overlays (a clean plate has none, not even the watermark)
+      if (!scene.cleanPlate) drawOverlaysOnCanvas(ctx, scene, currentTime, width, height);
 
       // Encode with an exact, evenly spaced timestamp
       await videoSource.add(currentTime, 1 / fps);
@@ -519,14 +602,17 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
     await output.cancel().catch(() => {});
     throw err;
   } finally {
-    viewer.clock.shouldAnimate = wasAnimating;
-    viewer.resolutionScale = prevResolutionScale;
+    restoreViewer();
   }
 
   const mimeType = await output.getMimeType();
   const blob = new Blob([output.target.buffer], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  const result = { blob, url, mimeType, size: blob.size };
+  const result = {
+    blob, url, mimeType, size: blob.size, stalledFrames, totalFrames,
+    track: scene.track ? { fps, width, height, frames: trackFrames } : null,
+  };
+  if (options.download === false) return result;
 
   // Trigger automatic download
   const safeName = (scene.name || 'location-video').toLowerCase().replace(/[^a-z0-9]+/g, '-');

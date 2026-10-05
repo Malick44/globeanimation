@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "auto-video": "node scripts/auto-video-agent.js"
+    "auto-video": "node scripts/auto-video-agent.js",
+    "render-scene": "node scripts/render-scene.js"
   },
   "dependencies": {
     "cesium": "^1.145.0",

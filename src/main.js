@@ -12,7 +12,7 @@ import { StudioTimeline } from './ui/timeline.js';
 import { ExportModal } from './ui/exportModal.js';
 import { PRESETS } from './presets.js';
 import { showToast } from './ui/toast.js';
-import { exportVideo, captureSnapshot } from './recorder/videoExporter.js';
+import { exportVideo, captureSnapshot, renderStills } from './recorder/videoExporter.js';
 import { VideoAgentEngine } from './agent/videoAgentEngine.js';
 import { AIAgentModal } from './agent/aiAgentModal.js';
 
@@ -112,6 +112,7 @@ window.addEventListener('DOMContentLoaded', () => {
       agentModal,
       openAgent: () => agentModal.show(),
       exportVideo: (options, onProgress) => exportVideo(engine, store.scene, options, onProgress),
+      renderStills: (fractions) => renderStills(engine, store.scene, fractions),
       captureSnapshot: (filename) => captureSnapshot(engine, store.scene, filename),
       seek: (progress) => engine.seek(store.scene, progress),
       loadPreset: (id) => {
