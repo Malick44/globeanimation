@@ -479,9 +479,9 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
   const durationSeconds = scene.format.durationSeconds || 8;
   const totalFrames = Math.round(durationSeconds * fps);
 
-  // Preload real ground photo if enabled
+  // Preload real ground photo if enabled (never on a clean plate: it is the globe alone)
   let groundImg = null;
-  if (scene.groundPhoto?.enabled && scene.groundPhoto?.url) {
+  if (!scene.cleanPlate && scene.groundPhoto?.enabled && scene.groundPhoto?.url) {
     try {
       groundImg = new Image();
       groundImg.crossOrigin = 'anonymous';
@@ -557,7 +557,7 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
     // Redraw pin badges with their web fonts loaded, then warm up on the opening pose so the first frame
     // already has its tiles and the badge texture uploaded
     await loadBadgeFonts();
-    globeEngine.overlayManager?.sync(scene);
+    if (!scene.cleanPlate) globeEngine.overlayManager?.sync(scene);
     globeEngine.seek(scene, 0);
     await settleTiles(viewer);
     for (let i = 0; i < 20; i++) {

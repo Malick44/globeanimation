@@ -179,7 +179,7 @@ node scripts/render-scene.js --scene scene.json --stills 0,0.5,1 --stills-dir pr
 Scene fields it relies on:
 
 - `"cleanPlate": true`: the globe alone. No pins, routes, titles or watermark; the caller draws its own.
-- `"imagery": "usgs" | "naturalearth"`: public-domain imagery that overrides the theme's. `usgs` is the USGS National Map orthoimagery (USDA NAIP up close, United States only) over Natural Earth II; `naturalearth` is Natural Earth II alone (whole globe, bundled with Cesium, offline). The report prints the credit.
+- `"imagery": "usgs" | "bluemarble" | "naturalearth"`: public-domain imagery that overrides the theme's. `naturalearth` is Natural Earth II alone (whole globe, bundled with Cesium, offline, soft up close); `bluemarble` adds NASA Blue Marble: Next Generation from NASA GIBS (whole globe, sharp to regional scale); `usgs` adds the USGS National Map orthoimagery from web-mercator zoom 9 down (USDA NAIP, United States only). The report prints the credit.
 - `"time": "2014-06-15T18:00:00Z"` fixes the sun, so the lighting doesn't depend on when the scene is rendered; `"lighting": false` turns it off.
 - `"track": {"points": {id: [lon, lat]}, "lines": {id: [[lon, lat], ...]}}`: every frame's screen position of each point, as `[x, y, visible]` in export pixels, written to `<out>.track.json` so the caller can draw labels and routes that stay locked to the ground.
 

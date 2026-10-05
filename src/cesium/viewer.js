@@ -126,6 +126,8 @@ export class GlobeEngine {
     }
     // A clean plate is the globe alone: pins, routes and titles are drawn later by the caller
     if (scene.cleanPlate) {
+      // forget the last scene too, or the font-load resync would bring its pins back
+      this.overlayManager.lastScene = null;
       this.overlayManager.clear();
     } else {
       this.overlayManager.sync(scene);
