@@ -2,7 +2,7 @@
  * Cesium Viewer Initialization & Visual Effects Manager
  */
 import * as Cesium from 'cesium';
-import { applyThemeImagery } from './imageryProviders.js';
+import { applyThemeImagery, applyDocumentaryImagery } from './imageryProviders.js';
 import { OverlayManager } from './overlays.js';
 import { sampleTwoPointCamera, sampleWaypointCamera, applyPoseToViewer } from './cameraAnimator.js';
 
@@ -76,14 +76,19 @@ export class GlobeEngine {
     if (onReady) onReady(this);
   }
 
-  applyTheme(themeKey) {
-    if (!this.viewer || this.viewer.isDestroyed() || this.currentTheme === themeKey) return;
-    this.currentTheme = themeKey;
+  applyTheme(themeKey, imageryKey = null) {
+    const key = `${themeKey}|${imageryKey || ''}`;
+    if (!this.viewer || this.viewer.isDestroyed() || this.currentTheme === key) return;
+    this.currentTheme = key;
 
     const scene = this.viewer.scene;
     const globe = scene.globe;
 
-    applyThemeImagery(this.viewer, themeKey);
+    // A scene's `imagery` (public-domain sources for documentaries) overrides the theme's imagery;
+    // imageryReady resolves to its credit once the layers are on the globe
+    this.imageryReady = imageryKey
+      ? applyDocumentaryImagery(this.viewer, imageryKey)
+      : applyThemeImagery(this.viewer, themeKey).then(() => null);
 
     if (themeKey === 'dark-data') {
       globe.enableLighting = true;
@@ -111,8 +116,20 @@ export class GlobeEngine {
 
   syncScene(scene) {
     if (!this.viewer || this.viewer.isDestroyed()) return;
-    this.applyTheme(scene.theme);
-    this.overlayManager.sync(scene);
+    this.applyTheme(scene.theme, scene.imagery);
+    // A fixed time of day keeps the sun lighting the same whenever the scene is rendered
+    if (scene.time) {
+      this.viewer.clock.currentTime = Cesium.JulianDate.fromIso8601(scene.time);
+    }
+    if (typeof scene.lighting === 'boolean') {
+      this.viewer.scene.globe.enableLighting = scene.lighting;
+    }
+    // A clean plate is the globe alone: pins, routes and titles are drawn later by the caller
+    if (scene.cleanPlate) {
+      this.overlayManager.clear();
+    } else {
+      this.overlayManager.sync(scene);
+    }
   }
 
   seek(scene, progress) {

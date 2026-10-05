@@ -164,3 +164,23 @@ npm run preview
 ---
 
 *Built with precision for content creators, geographic journalists, and storytellers.*
+
+---
+
+## 🎞️ Documentary renders (clean plates)
+
+`scripts/render-scene.js` renders a scene JSON headlessly with no prompt step, for pipelines that decide every place and camera move themselves (the documentaries pipeline calls it from `pipeline/globe.py`):
+
+```bash
+node scripts/render-scene.js --scene scene.json --out clip.mp4          # + clip.track.json
+node scripts/render-scene.js --scene scene.json --stills 0,0.5,1 --stills-dir preview/
+```
+
+Scene fields it relies on:
+
+- `"cleanPlate": true`: the globe alone. No pins, routes, titles or watermark; the caller draws its own.
+- `"imagery": "usgs" | "naturalearth"`: public-domain imagery that overrides the theme's. `usgs` is the USGS National Map orthoimagery (USDA NAIP up close, United States only) over Natural Earth II; `naturalearth` is Natural Earth II alone (whole globe, bundled with Cesium, offline). The report prints the credit.
+- `"time": "2014-06-15T18:00:00Z"` fixes the sun, so the lighting doesn't depend on when the scene is rendered; `"lighting": false` turns it off.
+- `"track": {"points": {id: [lon, lat]}, "lines": {id: [[lon, lat], ...]}}`: every frame's screen position of each point, as `[x, y, visible]` in export pixels, written to `<out>.track.json` so the caller can draw labels and routes that stay locked to the ground.
+
+The last stdout line is a JSON report: `out`, `track`, `frames`, `stalledFrames` (frames rendered before every tile arrived) and `imageryCredit`.
