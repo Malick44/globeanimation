@@ -169,7 +169,7 @@ npm run preview
 
 ## 🎞️ Documentary renders (clean plates)
 
-`scripts/render-scene.js` renders a scene JSON headlessly with no prompt step, for pipelines that decide every place and camera move themselves (the documentaries pipeline calls it from `pipeline/globe.py`):
+`scripts/render-scene.js` renders a scene JSON headlessly with no prompt step, for pipelines that decide every place and camera move themselves. The documentaries pipeline calls it from `pipeline/globe.py`, which plans the camera, grades the plate and draws its own labels.
 
 ```bash
 node scripts/render-scene.js --scene scene.json --out clip.mp4          # + clip.track.json
@@ -178,9 +178,25 @@ node scripts/render-scene.js --scene scene.json --stills 0,0.5,1 --stills-dir pr
 
 Scene fields it relies on:
 
-- `"cleanPlate": true`: the globe alone. No pins, routes, titles or watermark; the caller draws its own.
-- `"imagery": "usgs" | "bluemarble" | "naturalearth"`: public-domain imagery that overrides the theme's. `naturalearth` is Natural Earth II alone (whole globe, bundled with Cesium, offline, soft up close); `bluemarble` adds NASA Blue Marble: Next Generation from NASA GIBS (whole globe, sharp to regional scale); `usgs` adds the USGS National Map orthoimagery from web-mercator zoom 9 down (USDA NAIP, United States only). The report prints the credit.
-- `"time": "2014-06-15T18:00:00Z"` fixes the sun, so the lighting doesn't depend on when the scene is rendered; `"lighting": false` turns it off.
-- `"track": {"points": {id: [lon, lat]}, "lines": {id: [[lon, lat], ...]}}`: every frame's screen position of each point, as `[x, y, visible]` in export pixels, written to `<out>.track.json` so the caller can draw labels and routes that stay locked to the ground.
+- `"cleanPlate": true`: the globe alone. No pins, routes, titles, watermark or ground photo.
+- `"imagery"`: open imagery that overrides the theme's.
 
-The last stdout line is a JSON report: `out`, `track`, `frames`, `stalledFrames` (frames rendered before every tile arrived) and `imageryCredit`.
+  | Key | Layers | Licence |
+  |---|---|---|
+  | `sentinel2` | NASA Blue Marble, then ESA WorldCover 2021 Sentinel-2 (10 m) | CC BY 4.0 + public domain |
+  | `usgs` | `sentinel2` plus USDA NAIP from geographic level 13 (United States only) | CC BY 4.0 + public domain |
+  | `bluemarble` | NASA Blue Marble: Next Generation (NASA GIBS) | public domain |
+  | `naturalearth` | Natural Earth II, bundled with Cesium, offline | public domain |
+
+  The globe's base colour is ice, so the poles past the web-mercator limit don't show a disc. The report prints the combined credit.
+- `"look"`: the cinematic setup.
+  - `terrain: {exaggeration}`: real elevation from AWS Terrain Tiles (`src/cesium/terrainProvider.js`).
+  - `hillshade: {azimuth, altitude, exaggeration, alpha}`: relief shading drawn from the same tiles, because Cesium doesn't light heightmap terrain.
+  - `nightLights`: NASA Black Marble on the night side only, and only from altitude (to geographic level 6): at 500 m a pixel it would blur over the ground up close.
+  - `sharpness`: the maximum screen-space error; lower is sharper.
+  - `atmosphere: {hueShift, saturationShift, brightnessShift, lightIntensity}`, `fog` (haze density) and `stars`.
+- `"time": "2021-08-20T21:30:00Z"`: fixes the sun.
+- `"camera": {"frames": [[lon, lat, height, heading, pitch, roll], ...]}`: one planned pose per exported frame (format fps × duration). With sub-frames (fps × 3), the caller can average them into motion blur.
+- `"track": {"points": {id: [lon, lat]}, "lines": {id: [[lon, lat], ...]}}`: each point's screen position on every frame, as `[x, y, visible]` in export pixels, written to `<out>.track.json`. With terrain on, points are put on the exaggerated ground.
+
+Render at a larger `format` (e.g. 2880×1620) and downsample for supersampling. The last stdout line is a JSON report: `out`, `track`, `frames`, `stalledFrames` (frames rendered before every tile arrived) and `imageryCredit`.

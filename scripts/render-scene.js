@@ -35,13 +35,30 @@ if (!scenePath || (!outPath && !stills)) {
 const scene = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
 const log = (m) => console.error(m);
 
+// Watchdog: a render that makes no progress for STALL_S seconds (a stuck tile server, a hung page)
+// fails instead of waiting forever
+const STALL_S = Number(arg('--stall-timeout', '300'));
+let lastAlive = Date.now();
+const alive = () => (lastAlive = Date.now());
+setInterval(() => {
+  if (Date.now() - lastAlive > STALL_S * 1000) {
+    console.error(`render-scene failed: no progress for ${STALL_S} s`);
+    process.exit(3);
+  }
+}, 10000).unref();
+
 async function main() {
   const t0 = Date.now();
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
   const server = await createServer({ root, logLevel: 'error', server: { port, strictPort: false } });
   await server.listen();
   const url = server.resolvedUrls.local[0];
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
+  // a supersampled, motion-blurred render runs for minutes inside one page call: no protocol timeout
+  const browser = await puppeteer.launch({
+    headless: true,
+    protocolTimeout: 0,
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader'],
+  });
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
@@ -54,6 +71,7 @@ async function main() {
       g.globeEngine.syncScene(g.store.scene);
       return (await g.globeEngine.imageryReady) || null;
     }, scene);
+    alive();
     log(`scene loaded (${scene.format?.durationSeconds}s), imagery: ${credit || scene.theme}`);
 
     if (stills) {
@@ -70,23 +88,35 @@ async function main() {
     }
 
     await page.exposeFunction('__renderProgress', (p) => {
+      alive();
       if (p.frame % 30 === 0 || p.frame === p.totalFrames) log(`  frame ${p.frame}/${p.totalFrames}`);
+    });
+    // The clip comes back in chunks: a plate can be hundreds of MB, more than one CDP message carries
+    const out = path.resolve(outPath);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const part = out + '.part';
+    fs.writeFileSync(part, Buffer.alloc(0));
+    await page.exposeFunction('__writeChunk', (b64) => {
+      alive();
+      fs.appendFileSync(part, Buffer.from(b64, 'base64'));
     });
     const res = await page.evaluate(async () => {
       const r = await window.__GLOBE_STUDIO__.exportVideo({ format: 'mp4', download: false }, (p) => window.__renderProgress(p));
       const bytes = new Uint8Array(await r.blob.arrayBuffer());
-      let bin = '';
-      for (let i = 0; i < bytes.length; i += 16384) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 16384));
-      return { base64: btoa(bin), mimeType: r.mimeType, stalledFrames: r.stalledFrames, totalFrames: r.totalFrames, track: r.track };
+      const CHUNK = 6 * 1024 * 1024;
+      for (let o = 0; o < bytes.length; o += CHUNK) {
+        const piece = bytes.subarray(o, o + CHUNK);
+        let bin = '';
+        for (let i = 0; i < piece.length; i += 16384) bin += String.fromCharCode.apply(null, piece.subarray(i, i + 16384));
+        await window.__writeChunk(btoa(bin));
+      }
+      return { mimeType: r.mimeType, stalledFrames: r.stalledFrames, totalFrames: r.totalFrames, track: r.track };
     });
-    const out = path.resolve(outPath);
-    fs.mkdirSync(path.dirname(out), { recursive: true });
-    const buf = Buffer.from(res.base64, 'base64');
     if (res.mimeType.includes('mp4')) {
-      fs.writeFileSync(out, buf);
+      fs.renameSync(part, out);
     } else {
       const tmp = out + '.tmp.webm';
-      fs.writeFileSync(tmp, buf);
+      fs.renameSync(part, tmp);
       execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', tmp, '-c:v', 'libx264', '-crf', '16', '-pix_fmt', 'yuv420p', '-an', out]);
       fs.unlinkSync(tmp);
     }
