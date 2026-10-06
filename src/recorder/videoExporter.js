@@ -18,6 +18,7 @@ import {
 import * as Cesium from 'cesium';
 import { renderAmbienceOffline } from '../audio/ambience.js';
 import { loadBadgeFonts } from '../cesium/overlays.js';
+import { terrainHeight } from '../cesium/terrainProvider.js';
 
 /**
  * Render Ground Photo Transition on 2D Composite Canvas
@@ -282,7 +283,7 @@ export function captureSnapshot(globeEngine, scene, filename = 'location-snapsho
   const viewer = globeEngine?.viewer;
   if (!viewer) return;
 
-  viewer.scene.render();
+  viewer.scene.render(viewer.clock.currentTime); // without a time Cesium lights the frame for the system clock
   const sourceCanvas = globeEngine.getCanvas();
   if (!sourceCanvas) return;
 
@@ -319,7 +320,7 @@ export function captureSnapshot(globeEngine, scene, filename = 'location-snapsho
  * Wait until Cesium has streamed every imagery/terrain tile for the current camera pose,
  * so frames never show low-res tiles popping in. Capped so a stalled tile server cannot hang the export.
  */
-async function settleTiles(viewer, maxWaitMs = 8000) {
+async function settleTiles(viewer, maxWaitMs = 20000) {
   const scene = viewer.scene;
   const isSettled = () => scene.globe.tilesLoaded && viewer.dataSourceDisplay.ready;
   const deadline = performance.now() + maxWaitMs;
@@ -328,7 +329,7 @@ async function settleTiles(viewer, maxWaitMs = 8000) {
   // stale "loaded" state; require the globe to stay settled across consecutive renders
   let stableRenders = 0;
   while (stableRenders < 3) {
-    viewer.scene.render();
+    viewer.scene.render(viewer.clock.currentTime); // without a time Cesium lights the frame for the system clock
     stableRenders = isSettled() ? stableRenders + 1 : 0;
     if (performance.now() > deadline) {
       console.warn("Tile streaming timed out; rendering frame with tiles loaded so far");
@@ -372,6 +373,22 @@ function projectTrack(viewer, track, width, height) {
   const out = { points: {}, lines: {} };
   for (const [id, p] of Object.entries(track.points || {})) out.points[id] = one(p);
   for (const [id, pts] of Object.entries(track.lines || {})) out.lines[id] = pts.map(one);
+  return out;
+}
+
+/**
+ * With terrain on, put each tracked point on the (exaggerated) ground, so labels sit on their places.
+ * Points that give a height keep it. Single points sample fine tiles; line points coarser ones.
+ */
+async function groundTrack(viewer, track) {
+  if (!track || !viewer.scene.globe.terrainProvider || viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
+    return track;
+  }
+  const exag = viewer.scene.verticalExaggeration || 1;
+  const lift = async ([lon, lat, h], z) => [lon, lat, h ?? (await terrainHeight(lon, lat, z)) * exag];
+  const out = { points: {}, lines: {} };
+  for (const [id, p] of Object.entries(track.points || {})) out.points[id] = await lift(p, 11);
+  for (const [id, pts] of Object.entries(track.lines || {})) out.lines[id] = await Promise.all(pts.map((p) => lift(p, 8)));
   return out;
 }
 
@@ -427,6 +444,7 @@ export async function renderStills(globeEngine, scene, fractions) {
   const ctx = canvas.getContext('2d', { alpha: false });
   const sourceCanvas = globeEngine.getCanvas();
   const restore = prepareViewer(viewer, sourceCanvas, width, height);
+  const track = await groundTrack(viewer, scene.track);
   const stills = [];
   try {
     for (const f of fractions) {
@@ -438,7 +456,7 @@ export async function renderStills(globeEngine, scene, fractions) {
         progress: f,
         settled,
         png: canvas.toDataURL('image/png'),
-        track: scene.track ? projectTrack(viewer, scene.track, width, height) : null,
+        track: track ? projectTrack(viewer, track, width, height) : null,
       });
     }
   } finally {
@@ -517,7 +535,8 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
 
   const videoSource = new CanvasSource(canvas, {
     codec: videoCodec,
-    bitrate: QUALITY_HIGH,
+    // a clean plate is an intermediate that gets graded and re-encoded: keep its fine detail
+    bitrate: scene.cleanPlate ? QUALITY_VERY_HIGH : QUALITY_HIGH,
     keyFrameInterval: 1,
   });
   output.addVideoTrack(videoSource, { frameRate: fps });
@@ -550,6 +569,7 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
 
   // Render the globe at (at least) the export resolution so the frame and pin badges aren't upscaled
   const restoreViewer = prepareViewer(viewer, sourceCanvas, width, height);
+  const track = await groundTrack(viewer, scene.track);
   const trackFrames = [];
   let stalledFrames = 0;
 
@@ -571,7 +591,7 @@ export async function exportVideo(globeEngine, scene, options = {}, onProgress =
       // Update camera pose and render once every tile for this pose has arrived
       globeEngine.seek(scene, progress);
       if (!(await settleTiles(viewer))) stalledFrames++;
-      if (scene.track) trackFrames.push(projectTrack(viewer, scene.track, width, height));
+      if (track) trackFrames.push(projectTrack(viewer, track, width, height));
 
       // Draw Cesium WebGL canvas onto 2D canvas with cover aspect ratio
       drawGlobe(ctx, sourceCanvas, width, height);
